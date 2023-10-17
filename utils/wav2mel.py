@@ -80,9 +80,9 @@ class PitchAdjustableMelSpectrogram:
             normalized=False,
             onesided=True,
             return_complex=True,
-        )
-        spec = torch.view_as_real(spec)
-        spec = torch.sqrt(spec.pow(2).sum(-1) + (1e-9))
+        ).abs()
+        # spec = torch.view_as_real(spec)
+        # spec = torch.sqrt(spec.pow(2).sum(-1) + (1e-9))
 
         if key_shift != 0:
             size = self.n_fft // 2 + 1
