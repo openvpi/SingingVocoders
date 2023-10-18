@@ -9,6 +9,10 @@ import matplotlib
 import numpy as np
 import torch.utils.data
 from lightning.pytorch.utilities.rank_zero import rank_zero_debug, rank_zero_info, rank_zero_only
+from torch import nn
+
+
+
 from torch.utils.data import Dataset
 from torchmetrics import Metric, MeanMetric
 
@@ -26,6 +30,8 @@ torch.multiprocessing.set_sharing_strategy(os.getenv('TORCH_SHARE_STRATEGY', 'fi
 log_format = '%(asctime)s %(message)s'
 logging.basicConfig(stream=sys.stdout, level=logging.INFO,
                     format=log_format, datefmt='%m/%d %I:%M:%S %p')
+
+
 
 
 class BaseDataset(Dataset):
@@ -109,8 +115,13 @@ class BaseTask(pl.LightningModule):
         self.max_val_batch_frames = self.config['max_val_batch_frames']
         self.max_val_batch_size = self.config['max_val_batch_size']
 
+        self.accumulate_grad_batches=self.config['accumulate_grad_batches']
+        self.clip_grad_norm = self.config['clip_grad_norm']
+
         self.training_sampler = None
         self.model = None
+        self.Gmodel = None
+        self.Dmodel = None
         self.skip_immediate_validation = False
         self.skip_immediate_ckpt_save = False
 
@@ -118,6 +129,13 @@ class BaseTask(pl.LightningModule):
             'total_loss': MeanMetric()
         }
         self.valid_metric_names = set()
+        self.mix_loss=None
+
+        self.automatic_optimization = False
+        self.skip_immediate_validations = 0
+
+        self.aux_step=None
+
 
     ###########
     # Training, validation and testing
@@ -227,7 +245,15 @@ class BaseTask(pl.LightningModule):
         setattr(self, name, metric)
         self.valid_metric_names.add(name)
 
-    def run_model(self, sample, infer=False):
+    # def run_model(self, sample, infer=False):
+    #     """
+    #     steps:
+    #         1. run the full model
+    #         2. calculate losses if not infer
+    #     """
+    #     raise NotImplementedError()
+
+    def Gforward(self, sample, infer=False):
         """
         steps:
             1. run the full model
@@ -235,31 +261,82 @@ class BaseTask(pl.LightningModule):
         """
         raise NotImplementedError()
 
-    def on_train_epoch_start(self):
-        if self.training_sampler is not None:
-            self.training_sampler.set_epoch(self.current_epoch)
+    def Dforward(self,Goutput ):
+        """
+        steps:
+            1. run the full model
+            2. calculate losses if not infer
+        """
+        raise NotImplementedError()
 
-    def _training_step(self, sample):
+
+    # def on_train_epoch_start(self):
+    #     if self.training_sampler is not None:
+    #         self.training_sampler.set_epoch(self.current_epoch)
+
+    def _training_step(self, sample,batch_idx):
         """
         :return: total loss: torch.Tensor, loss_log: dict, other_log: dict
-        """
-        losses = self.run_model(sample)
-        total_loss = sum(losses.values())
-        return total_loss, {**losses, 'batch_size': float(sample['size'])}
 
-    def training_step(self, sample, batch_idx, optimizer_idx=-1):  #todo
-        total_loss, log_outputs = self._training_step(sample)
+        """
+        aux_only=False
+        if self.aux_step is not None :
+            if self.aux_step < self.global_step:
+                aux_only=True
+
+
+        log_diet={}
+        opt_g, opt_d = self.optimizers()
+        Goutpt=self.Gforward(sample=sample)
+        if not aux_only:
+            Dfake=self.Dforward(Goutput=Goutpt['wav'].detach())
+            Dtrue = self.Dforward(Goutput=sample['wav'])
+            Dloss,Dlog=self.mix_loss.Dloss(Dfake=Dfake,Dtrue=Dtrue)
+            log_diet.update(Dlog)
+            self.manual_backward(Dloss)
+            if (batch_idx + 1) % self.accumulate_grad_batches == 0:
+                if self.clip_grad_norm is not None:
+                    self.clip_gradients(opt_d, gradient_clip_val=self.clip_grad_norm, gradient_clip_algorithm="norm")
+                opt_d.step()
+                opt_d.zero_grad()
+        if not aux_only:
+            GDfake = self.Dforward(Goutput=Goutpt['wav'])
+            GDloss, GDlog = self.mix_loss.GDloss(GDfake=GDfake)
+            log_diet.update(GDlog)
+        Auxloss, Auxlog = self.mix_loss.Auxloss(Goutput=Goutpt['wav'])
+
+        log_diet.update(Auxlog)
+        if not aux_only:
+            self.manual_backward(GDloss+Auxloss)
+        else:
+            self.manual_backward(Auxloss)
+        if (batch_idx + 1) % self.accumulate_grad_batches == 0:
+            if self.clip_grad_norm is not None:
+                self.clip_gradients(opt_g, gradient_clip_val=self.clip_grad_norm, gradient_clip_algorithm="norm")
+            opt_g.step()
+            opt_g.zero_grad()
+
+
+
+
+
+
+
+        return log_diet
+
+    def training_step(self, sample, batch_idx, ):  #todo
+        log_outputs = self._training_step(sample,batch_idx)
 
         # logs to progress bar
         self.log_dict(log_outputs, prog_bar=True, logger=False, on_step=True, on_epoch=False)
-        self.log('lr', self.lr_schedulers().get_last_lr()[0], prog_bar=True, logger=False, on_step=True, on_epoch=False)
+        # self.log('lr', self.lr_schedulers().get_last_lr()[0], prog_bar=True, logger=False, on_step=True, on_epoch=False)
         # logs to tensorboard
         if self.global_step % self.config['log_interval'] == 0:
             tb_log = {f'training/{k}': v for k, v in log_outputs.items()}
-            tb_log['training/lr'] = self.lr_schedulers().get_last_lr()[0]
+            # tb_log['training/lr'] = self.lr_schedulers().get_last_lr()[0]
             self.logger.log_metrics(tb_log, step=self.global_step)
-
-        return total_loss
+        #
+        # return total_loss
 
     # def on_before_optimizer_step(self, *args, **kwargs):
     #     self.log_dict(grad_norm(self, norm_type=2))
@@ -287,7 +364,16 @@ class BaseTask(pl.LightningModule):
 
         :param sample:
         :param batch_idx:
+
         """
+
+        if self.skip_immediate_validations ==0 and self.global_step!=0:
+            self.skip_immediate_validation=True
+            self.skip_immediate_validations=1
+        if self.global_step==0:
+            self.skip_immediate_validations = 1
+
+
         if self.skip_immediate_validation:
             rank_zero_debug(f"Skip validation {batch_idx}")
             return {}
@@ -300,7 +386,7 @@ class BaseTask(pl.LightningModule):
         for k, v in losses.items():
             if k not in self.valid_losses:
                 self.valid_losses[k] = MeanMetric().to(self.device)
-            self.valid_losses[k].update(v, weight=weight)
+            self.valid_losses[k].update(v, weight=weight) #weight=1
         return losses
 
     def on_validation_epoch_end(self):
@@ -335,61 +421,95 @@ class BaseTask(pl.LightningModule):
         assert optimizer_args['optimizer_cls'] != ''
         if 'beta1' in optimizer_args and 'beta2' in optimizer_args and 'betas' not in optimizer_args:
             optimizer_args['betas'] = (optimizer_args['beta1'], optimizer_args['beta2'])
-        optimizer = build_object_from_class_name(
-            optimizer_args['optimizer_cls'],
-            torch.optim.Optimizer,
-            model.parameters(),
-            **optimizer_args
-        )
+
+
+
+        if isinstance(model, nn.ModuleList):
+            parameterslist = []
+            for i in model:
+                parameterslist = parameterslist + list(i.parameters())
+            optimizer = build_object_from_class_name(
+                optimizer_args['optimizer_cls'],
+                torch.optim.Optimizer,
+                parameterslist,
+                **optimizer_args
+            )
+        elif isinstance(model, nn.ModuleDict):
+            parameterslist=[]
+            for i in model:
+                parameterslist=parameterslist+list(model[i].parameters())
+            optimizer = build_object_from_class_name(
+                optimizer_args['optimizer_cls'],
+                torch.optim.Optimizer,
+                parameterslist,
+                **optimizer_args
+            )
+        elif isinstance(model, nn.Module):
+
+            optimizer = build_object_from_class_name(
+                optimizer_args['optimizer_cls'],
+                torch.optim.Optimizer,
+                model.parameters(),
+                **optimizer_args
+            )
+        else:
+            raise RuntimeError("")
+
+
         return optimizer
 
     def configure_optimizers(self):
-        optm = self.build_optimizer(self.model)
-        scheduler = self.build_scheduler(optm)
-        if scheduler is None:
-            return optm
-        return {
-            "optimizer": optm,
-            "lr_scheduler": {
-                "scheduler": scheduler,
-                "interval": "step",
-                "frequency": 1
-            }
-        }
+        optG = self.build_optimizer(self.Gmodel)
+        optD = self.build_optimizer(self.Dmodel)
+
+        return [optG,optD]
+        # scheduler = self.build_scheduler(optm)
+        # if scheduler is None:
+        #     return optm
+        # return {
+        #     "optimizer": optm,
+        #     "lr_scheduler": {
+        #         "scheduler": scheduler,
+        #         "interval": "step",
+        #         "frequency": 1
+        #     }
+        # }
 
     def train_dataloader(self):
-        self.training_sampler = DsBatchSampler(
-            self.train_dataset,
-            max_batch_frames=self.max_batch_frames,
-            max_batch_size=self.max_batch_size,
-            num_replicas=(self.trainer.distributed_sampler_kwargs or {}).get('num_replicas', 1),
-            rank=(self.trainer.distributed_sampler_kwargs or {}).get('rank', 0),
-            sort_by_similar_size=self.config['sort_by_len'],
-            required_batch_count_multiple=self.config['accumulate_grad_batches'],
-            frame_count_grid=self.config['sampler_frame_count_grid'],
-            shuffle_sample=True,
-            shuffle_batch=False,
-            seed=self.config['seed']
-        )
+        # self.training_sampler = DsBatchSampler(
+        #     self.train_dataset,
+        #     max_batch_frames=self.max_batch_frames,
+        #     max_batch_size=self.max_batch_size,
+        #     num_replicas=(self.trainer.distributed_sampler_kwargs or {}).get('num_replicas', 1),
+        #     rank=(self.trainer.distributed_sampler_kwargs or {}).get('rank', 0),
+        #     sort_by_similar_size=self.config['sort_by_len'],
+        #     required_batch_count_multiple=self.config['accumulate_grad_batches'],
+        #     frame_count_grid=self.config['sampler_frame_count_grid'],
+        #     shuffle_sample=True,
+        #     shuffle_batch=False,
+        #     seed=self.config['seed']
+        # )
         return torch.utils.data.DataLoader(self.train_dataset,
                                            collate_fn=self.train_dataset.collater,
-                                           batch_sampler=self.training_sampler,
+                                           batch_size=self.config['batch_size'],
+                                           # batch_sampler=self.training_sampler,
                                            num_workers=self.config['ds_workers'],
                                            prefetch_factor=self.config['dataloader_prefetch_factor'],
                                            pin_memory=True,
                                            persistent_workers=True)
 
     def val_dataloader(self):
-        sampler = DsEvalBatchSampler(
-            self.valid_dataset,
-            max_batch_frames=self.max_val_batch_frames,
-            max_batch_size=self.max_val_batch_size,
-            rank=(self.trainer.distributed_sampler_kwargs or {}).get('rank', 0),
-            batch_by_size=False
-        )
+        # sampler = DsEvalBatchSampler(
+        #     self.valid_dataset,
+        #     max_batch_frames=self.max_val_batch_frames,
+        #     max_batch_size=self.max_val_batch_size,
+        #     rank=(self.trainer.distributed_sampler_kwargs or {}).get('rank', 0),
+        #     batch_by_size=False
+        # )
         return torch.utils.data.DataLoader(self.valid_dataset,
                                            collate_fn=self.valid_dataset.collater,
-                                           batch_sampler=sampler,
+                                           batch_size=1,
+                                           # batch_sampler=sampler,
                                            num_workers=self.config['ds_workers'],
                                            prefetch_factor=self.config['dataloader_prefetch_factor'],
                                            shuffle=False)
@@ -407,50 +527,51 @@ class BaseTask(pl.LightningModule):
         return self.on_validation_end()
 
     def on_save_checkpoint(self, checkpoint):
-        checkpoint['trainer_stage'] = self.trainer.state.stage.value
+        pass
+        # checkpoint['trainer_stage'] = self.trainer.state.stage.value
 
-    def on_load_checkpoint(self, checkpoint):
-        from lightning.pytorch.trainer.states import RunningStage
-        from utils import simulate_lr_scheduler
-        if checkpoint.get('trainer_stage', '') == RunningStage.VALIDATING.value:
-            self.skip_immediate_validation = True
-
-        optimizer_args = self.config['optimizer_args']
-        scheduler_args = self.config['lr_scheduler_args']
-
-        if 'beta1' in optimizer_args and 'beta2' in optimizer_args and 'betas' not in optimizer_args:
-            optimizer_args['betas'] = (optimizer_args['beta1'], optimizer_args['beta2'])
-
-        if checkpoint.get('optimizer_states', None):
-            opt_states = checkpoint['optimizer_states']
-            assert len(opt_states) == 1  # only support one optimizer
-            opt_state = opt_states[0]
-            for param_group in opt_state['param_groups']:
-                for k, v in optimizer_args.items():
-                    if k in param_group and param_group[k] != v:
-                        if 'lr_schedulers' in checkpoint and checkpoint['lr_schedulers'] and k == 'lr':
-                            continue
-                        rank_zero_info(f'| Overriding optimizer parameter {k} from checkpoint: {param_group[k]} -> {v}')
-                        param_group[k] = v
-                if 'initial_lr' in param_group and param_group['initial_lr'] != optimizer_args['lr']:
-                    rank_zero_info(
-                        f'| Overriding optimizer parameter initial_lr from checkpoint: {param_group["initial_lr"]} -> {optimizer_args["lr"]}'
-                    )
-                    param_group['initial_lr'] = optimizer_args['lr']
-
-        if checkpoint.get('lr_schedulers', None):
-            assert checkpoint.get('optimizer_states', False)
-            assert len(checkpoint['lr_schedulers']) == 1  # only support one scheduler
-            checkpoint['lr_schedulers'][0] = simulate_lr_scheduler(
-                optimizer_args, scheduler_args,
-                step_count=checkpoint['global_step'],
-                num_param_groups=len(checkpoint['optimizer_states'][0]['param_groups'])
-            )
-            for param_group, new_lr in zip(
-                    checkpoint['optimizer_states'][0]['param_groups'],
-                    checkpoint['lr_schedulers'][0]['_last_lr'],
-            ):
-                if param_group['lr'] != new_lr:
-                    rank_zero_info(
-                        f'| Overriding optimizer parameter lr from checkpoint: {param_group["lr"]} -> {new_lr}')
-                    param_group['lr'] = new_lr
+    # def on_load_checkpoint(self, checkpoint):
+    #     # from lightning.pytorch.trainer.states import RunningStage
+    #     from utils import simulate_lr_scheduler
+    #     # if checkpoint.get('trainer_stage', '') == RunningStage.VALIDATING.value:
+    #     #     self.skip_immediate_validation = True
+    #
+    #     optimizer_args = self.config['optimizer_args']
+    #     scheduler_args = self.config['lr_scheduler_args']
+    #
+    #     if 'beta1' in optimizer_args and 'beta2' in optimizer_args and 'betas' not in optimizer_args:
+    #         optimizer_args['betas'] = (optimizer_args['beta1'], optimizer_args['beta2'])
+    #
+    #     if checkpoint.get('optimizer_states', None):
+    #         opt_states = checkpoint['optimizer_states']
+    #         assert len(opt_states) == 1  # only support one optimizer
+    #         opt_state = opt_states[0]
+    #         for param_group in opt_state['param_groups']:
+    #             for k, v in optimizer_args.items():
+    #                 if k in param_group and param_group[k] != v:
+    #                     if 'lr_schedulers' in checkpoint and checkpoint['lr_schedulers'] and k == 'lr':
+    #                         continue
+    #                     rank_zero_info(f'| Overriding optimizer parameter {k} from checkpoint: {param_group[k]} -> {v}')
+    #                     param_group[k] = v
+    #             if 'initial_lr' in param_group and param_group['initial_lr'] != optimizer_args['lr']:
+    #                 rank_zero_info(
+    #                     f'| Overriding optimizer parameter initial_lr from checkpoint: {param_group["initial_lr"]} -> {optimizer_args["lr"]}'
+    #                 )
+    #                 param_group['initial_lr'] = optimizer_args['lr']
+    #
+    #     if checkpoint.get('lr_schedulers', None):
+    #         assert checkpoint.get('optimizer_states', False)
+    #         assert len(checkpoint['lr_schedulers']) == 1  # only support one scheduler
+    #         checkpoint['lr_schedulers'][0] = simulate_lr_scheduler(
+    #             optimizer_args, scheduler_args,
+    #             step_count=checkpoint['global_step'],
+    #             num_param_groups=len(checkpoint['optimizer_states'][0]['param_groups'])
+    #         )
+    #         for param_group, new_lr in zip(
+    #                 checkpoint['optimizer_states'][0]['param_groups'],
+    #                 checkpoint['lr_schedulers'][0]['_last_lr'],
+    #         ):
+    #             if param_group['lr'] != new_lr:
+    #                 rank_zero_info(
+    #                     f'| Overriding optimizer parameter lr from checkpoint: {param_group["lr"]} -> {new_lr}')
+    #                 param_group['lr'] = new_lr
