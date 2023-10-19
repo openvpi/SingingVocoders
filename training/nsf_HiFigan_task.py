@@ -46,7 +46,7 @@ class nsf_HiFigan_dataset(Dataset):
         self.data_index = fills
         self.infer = infer
         self.volume_aug = self.config['volume_aug']
-        self.volume_aug_prob = self.config['volume_aug_prob']
+        self.volume_aug_prob = self.config['volume_aug_prob'] if not infer else 0
 
 
     def __getitem__(self, index):

@@ -13,7 +13,7 @@ class HiFiloss(nn.Module):
         win_length=config['win_size'],
         hop_length=config['hop_size'],
         f_min=config['fmin'],
-        f_max=config['fmax'],
+        f_max=config['fmax_for_loss'],
         n_mels=config['audio_num_mel_bins'],)
         self.L1loss=nn.L1Loss()
         self.labauxloss=config.get('lab_aux_loss',45)
@@ -77,7 +77,7 @@ class HiFiloss(nn.Module):
         mpd_featrue_loss = self.feature_loss(Tmpd_featrue, Fmpd_featrue)
         loss +=msd_featrue_loss
         loss +=mpd_featrue_loss
-        (msd_losses, mpd_losses), (msd_featrue_loss, mpd_featrue_loss), gen_losses
+        # (msd_losses, mpd_losses), (msd_featrue_loss, mpd_featrue_loss), gen_losses
         return loss, {'Gmsdloss':msd_losses,'Gmpdloss':mpd_losses,'Gmsd_featrue_loss':msd_featrue_loss,'Dmpd_featrue_loss':mpd_featrue_loss}
 
     def Auxloss(self,Goutput, sample):
