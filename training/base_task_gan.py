@@ -11,8 +11,6 @@ import torch.utils.data
 from lightning.pytorch.utilities.rank_zero import rank_zero_debug, rank_zero_info, rank_zero_only
 from torch import nn
 
-
-
 from torch.utils.data import Dataset
 from torchmetrics import Metric, MeanMetric
 
@@ -30,8 +28,6 @@ torch.multiprocessing.set_sharing_strategy(os.getenv('TORCH_SHARE_STRATEGY', 'fi
 log_format = '%(asctime)s %(message)s'
 logging.basicConfig(stream=sys.stdout, level=logging.INFO,
                     format=log_format, datefmt='%m/%d %I:%M:%S %p')
-
-
 
 
 class BaseDataset(Dataset):
@@ -82,7 +78,10 @@ class BaseDataset(Dataset):
         }
 
 
-class BaseTask(pl.LightningModule):
+
+
+
+class GanBaseTask(pl.LightningModule):
     """
         Base class for training tasks.
         1. *load_ckpt*:
@@ -110,18 +109,18 @@ class BaseTask(pl.LightningModule):
         super().__init__(*args, **kwargs)
         self.dataset_cls = None
         self.config = config
-        self.max_batch_frames = self.config['max_batch_frames']
-        self.max_batch_size = self.config['max_batch_size']
-        self.max_val_batch_frames = self.config['max_val_batch_frames']
-        self.max_val_batch_size = self.config['max_val_batch_size']
+        # self.max_batch_frames = self.config['max_batch_frames']
+        # self.max_batch_size = self.config['max_batch_size']
+        # self.max_val_batch_frames = self.config['max_val_batch_frames']
+        # self.max_val_batch_size = self.config['max_val_batch_size']
 
-        self.accumulate_grad_batches=self.config['accumulate_grad_batches']
+        self.accumulate_grad_batches = self.config['accumulate_grad_batches']
         self.clip_grad_norm = self.config['clip_grad_norm']
 
         self.training_sampler = None
         self.model = None
-        self.Gmodel = None
-        self.Dmodel = None
+        self.generator = None
+        self.discriminator = None
         self.skip_immediate_validation = False
         self.skip_immediate_ckpt_save = False
 
@@ -129,15 +128,17 @@ class BaseTask(pl.LightningModule):
             'total_loss': MeanMetric()
         }
         self.valid_metric_names = set()
-        self.mix_loss=None
+        self.mix_loss = None
 
         self.automatic_optimization = False
         self.skip_immediate_validations = 0
 
-        self.aux_step=None
-
+        self.aux_step = None
+        self.train_dataset = None
+        self.valid_dataset = None
 
     ###########
+
     # Training, validation and testing
     ###########
     def setup(self, stage):
@@ -150,14 +151,18 @@ class BaseTask(pl.LightningModule):
             self.load_finetune_ckpt(self.load_pre_train_model())
         self.print_arch()
         self.build_losses_and_metrics()
-        self.train_dataset = self.dataset_cls(
-            config=self.config, data_dir=self.config['binary_data_dir'],
-            prefix=self.config['train_set_name'], allow_aug=True
-        )
-        self.valid_dataset = self.dataset_cls(
-            config=self.config, data_dir=self.config['binary_data_dir'],
-            prefix=self.config['valid_set_name'], allow_aug=False
-        )
+        self.build_dataset()
+        # self.train_dataset = self.dataset_cls(
+        #     config=self.config, data_dir=self.config['binary_data_dir'],
+        #     prefix=self.config['train_set_name'], allow_aug=True
+        # )
+        # self.valid_dataset = self.dataset_cls(
+        #     config=self.config, data_dir=self.config['binary_data_dir'],
+        #     prefix=self.config['valid_set_name'], allow_aug=False
+        # )
+
+    def build_dataset(self):
+        raise NotImplementedError()
 
     def get_need_freeze_state_dict_key(self, model_state_dict) -> list:
         key_list = []
@@ -177,7 +182,7 @@ class BaseTask(pl.LightningModule):
             params.requires_grad = False
 
     def unfreeze_all_params(self) -> None:
-        for i in self.model.parameters():
+        for i in self.parameters():
             i.requires_grad = True
 
     def load_finetune_ckpt(
@@ -235,7 +240,7 @@ class BaseTask(pl.LightningModule):
 
     @rank_zero_only
     def print_arch(self):
-        utils.print_arch(self.model)
+        utils.print_arch(self)
 
     def build_losses_and_metrics(self):
         raise NotImplementedError()
@@ -261,7 +266,7 @@ class BaseTask(pl.LightningModule):
         """
         raise NotImplementedError()
 
-    def Dforward(self,Goutput ):
+    def Dforward(self, Goutput):
         """
         steps:
             1. run the full model
@@ -269,29 +274,27 @@ class BaseTask(pl.LightningModule):
         """
         raise NotImplementedError()
 
-
     # def on_train_epoch_start(self):
     #     if self.training_sampler is not None:
     #         self.training_sampler.set_epoch(self.current_epoch)
 
-    def _training_step(self, sample,batch_idx):
+    def _training_step(self, sample, batch_idx):
         """
         :return: total loss: torch.Tensor, loss_log: dict, other_log: dict
 
         """
-        aux_only=False
-        if self.aux_step is not None :
+        aux_only = False
+        if self.aux_step is not None:
             if self.aux_step < self.global_step:
-                aux_only=True
+                aux_only = True
 
-
-        log_diet={}
+        log_diet = {}
         opt_g, opt_d = self.optimizers()
-        Goutpt=self.Gforward(sample=sample)
+        Goutpt = self.Gforward(sample=sample)
         if not aux_only:
-            Dfake=self.Dforward(Goutput=Goutpt['wav'].detach())
-            Dtrue = self.Dforward(Goutput=sample['wav'])
-            Dloss,Dlog=self.mix_loss.Dloss(Dfake=Dfake,Dtrue=Dtrue)
+            Dfake = self.Dforward(Goutput=Goutpt['audio'].detach())
+            Dtrue = self.Dforward(Goutput=sample['audio'])
+            Dloss, Dlog = self.mix_loss.Dloss(Dfake=Dfake, Dtrue=Dtrue)
             log_diet.update(Dlog)
             self.manual_backward(Dloss)
             if (batch_idx + 1) % self.accumulate_grad_batches == 0:
@@ -300,14 +303,15 @@ class BaseTask(pl.LightningModule):
                 opt_d.step()
                 opt_d.zero_grad()
         if not aux_only:
-            GDfake = self.Dforward(Goutput=Goutpt['wav'])
-            GDloss, GDlog = self.mix_loss.GDloss(GDfake=GDfake)
+            GDfake = self.Dforward(Goutput=Goutpt['audio'])
+            GDtrue=self.Dforward(Goutput=sample['audio'])
+            GDloss, GDlog = self.mix_loss.GDloss(GDfake=GDfake,GDtrue=GDtrue)
             log_diet.update(GDlog)
-        Auxloss, Auxlog = self.mix_loss.Auxloss(Goutput=Goutpt['wav'])
+        Auxloss, Auxlog = self.mix_loss.Auxloss(Goutput=Goutpt, sample=sample)
 
         log_diet.update(Auxlog)
         if not aux_only:
-            self.manual_backward(GDloss+Auxloss)
+            self.manual_backward(GDloss + Auxloss)
         else:
             self.manual_backward(Auxloss)
         if (batch_idx + 1) % self.accumulate_grad_batches == 0:
@@ -316,16 +320,10 @@ class BaseTask(pl.LightningModule):
             opt_g.step()
             opt_g.zero_grad()
 
-
-
-
-
-
-
         return log_diet
 
-    def training_step(self, sample, batch_idx, ):  #todo
-        log_outputs = self._training_step(sample,batch_idx)
+    def training_step(self, sample, batch_idx, ):  # todo
+        log_outputs = self._training_step(sample, batch_idx)
 
         # logs to progress bar
         self.log_dict(log_outputs, prog_bar=True, logger=False, on_step=True, on_epoch=False)
@@ -367,12 +365,11 @@ class BaseTask(pl.LightningModule):
 
         """
 
-        if self.skip_immediate_validations ==0 and self.global_step!=0:
-            self.skip_immediate_validation=True
-            self.skip_immediate_validations=1
-        if self.global_step==0:
+        if self.skip_immediate_validations == 0 and self.global_step != 0:
+            self.skip_immediate_validation = True
             self.skip_immediate_validations = 1
-
+        if self.global_step == 0:
+            self.skip_immediate_validations = 1
 
         if self.skip_immediate_validation:
             rank_zero_debug(f"Skip validation {batch_idx}")
@@ -386,7 +383,7 @@ class BaseTask(pl.LightningModule):
         for k, v in losses.items():
             if k not in self.valid_losses:
                 self.valid_losses[k] = MeanMetric().to(self.device)
-            self.valid_losses[k].update(v, weight=weight) #weight=1
+            self.valid_losses[k].update(v, weight=weight)  # weight=1
         return losses
 
     def on_validation_epoch_end(self):
@@ -414,15 +411,12 @@ class BaseTask(pl.LightningModule):
         return scheduler
 
     # noinspection PyMethodMayBeStatic
-    def build_optimizer(self, model):
+    def build_optimizer(self, model, optimizer_args):
         from utils import build_object_from_class_name
 
-        optimizer_args = self.config['optimizer_args']
         assert optimizer_args['optimizer_cls'] != ''
         if 'beta1' in optimizer_args and 'beta2' in optimizer_args and 'betas' not in optimizer_args:
             optimizer_args['betas'] = (optimizer_args['beta1'], optimizer_args['beta2'])
-
-
 
         if isinstance(model, nn.ModuleList):
             parameterslist = []
@@ -435,9 +429,9 @@ class BaseTask(pl.LightningModule):
                 **optimizer_args
             )
         elif isinstance(model, nn.ModuleDict):
-            parameterslist=[]
+            parameterslist = []
             for i in model:
-                parameterslist=parameterslist+list(model[i].parameters())
+                parameterslist = parameterslist + list(model[i].parameters())
             optimizer = build_object_from_class_name(
                 optimizer_args['optimizer_cls'],
                 torch.optim.Optimizer,
@@ -455,14 +449,13 @@ class BaseTask(pl.LightningModule):
         else:
             raise RuntimeError("")
 
-
         return optimizer
 
     def configure_optimizers(self):
-        optG = self.build_optimizer(self.Gmodel)
-        optD = self.build_optimizer(self.Dmodel)
+        optG = self.build_optimizer(self.generator, optimizer_args=self.config['generater_optimizer_args'])
+        optD = self.build_optimizer(self.discriminator, optimizer_args=self.config['discriminate_optimizer_args'])
 
-        return [optG,optD]
+        return [optG, optD]
         # scheduler = self.build_scheduler(optm)
         # if scheduler is None:
         #     return optm

@@ -51,7 +51,7 @@ def train(config, exp_name, work_dir):
     pkg = ".".join(config["task_cls"].split(".")[:-1])
     cls_name = config["task_cls"].split(".")[-1]
     task_cls = getattr(importlib.import_module(pkg), cls_name)
-    assert issubclass(task_cls, training.BaseTask), f'Task class {task_cls} is not a subclass of {training.BaseTask}.'
+    # assert issubclass(task_cls, training.BaseTask), f'Task class {task_cls} is not a subclass of {training.BaseTask}.'
 
     task = task_cls(config=config)
 
@@ -90,7 +90,7 @@ def train(config, exp_name, work_dir):
             name='lightning_logs',
             version='lastest'
         ),
-        gradient_clip_val=config['clip_grad_norm'],
+        # gradient_clip_val=config['clip_grad_norm'],
         val_check_interval=config['val_check_interval'] * config['accumulate_grad_batches'],
         # so this is global_steps
         check_val_every_n_epoch=None,

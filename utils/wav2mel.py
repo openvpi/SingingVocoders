@@ -96,6 +96,9 @@ class PitchAdjustableMelSpectrogram:
 
         return spec
 
+    def dynamic_range_compression_torch(self,x, C=1, clip_val=1e-5):
+        return torch.log(torch.clamp(x, min=clip_val) * C)
+
 if __name__=='__main__':
     import glob
     import torchaudio
