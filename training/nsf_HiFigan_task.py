@@ -127,7 +127,9 @@ class nsf_HiFigan_dataset(Dataset):
 class nsf_HiFigan(GanBaseTask):
     def __init__(self, config):
         super().__init__(config)
-        self.TF = PitchAdjustableMelSpectrogram()
+        self.TF = PitchAdjustableMelSpectrogram(        f_min=0,
+        f_max=None,
+        n_mels=256,)
         self.logged_gt_wav = set()
 
     def build_dataset(self):

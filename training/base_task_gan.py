@@ -326,7 +326,7 @@ class GanBaseTask(pl.LightningModule):
         log_outputs = self._training_step(sample, batch_idx)
 
         # logs to progress bar
-        self.log_dict(log_outputs, prog_bar=True, logger=False, on_step=True, on_epoch=False)
+        self.log_dict({'loss':sum(log_outputs.values())}, prog_bar=True, logger=False, on_step=True, on_epoch=False)
         # self.log('lr', self.lr_schedulers().get_last_lr()[0], prog_bar=True, logger=False, on_step=True, on_epoch=False)
         # logs to tensorboard
         if self.global_step % self.config['log_interval'] == 0:
