@@ -17,8 +17,10 @@ from torch.utils.data import Dataset
 from torchmetrics import Metric, MeanMetric
 
 import utils
+from models.ddspgan.ddspgan import DDSPgan
 from models.nsf_HiFigan.models import Generator, AttrDict, MultiScaleDiscriminator, MultiPeriodDiscriminator
 from modules.loss.HiFiloss import HiFiloss
+from modules.loss.ddsploss import ddsploss
 from training.base_task_gan import GanBaseTask
 from utils.indexed_datasets import IndexedDataset
 from utils.training_utils import (
@@ -171,7 +173,7 @@ class stftlog:
         ).abs()
         return spec
 
-class ddspgan(GanBaseTask):
+class ddspgan_task(GanBaseTask):
     def __init__(self, config):
         super().__init__(config)
         self.TF = PitchAdjustableMelSpectrogram(        f_min=0,
@@ -189,15 +191,15 @@ class ddspgan(GanBaseTask):
                                                  data_dir=pathlib.Path(self.config['DataIndexPath']) / self.config[
                                                      'valid_set_name'], infer=True)
     def build_model(self):
-        cfg=self.config['model_args']
+        # cfg=self.config['model_args']
 
-        cfg.update({'sampling_rate':self.config['audio_sample_rate'],'num_mels':self.config['audio_num_mel_bins'],'hop_size':self.config['hop_size']})
-        h=AttrDict(cfg)
-        self.generator=Generator(h)
-        self.discriminator=nn.ModuleDict({'msd':MultiScaleDiscriminator(), 'mpd':MultiPeriodDiscriminator(periods=cfg['discriminator_periods'])})
+        # cfg.update({'sampling_rate':self.config['audio_sample_rate'],'num_mels':self.config['audio_num_mel_bins'],'hop_size':self.config['hop_size']})
+        # h=AttrDict(cfg)
+        self.generator=DDSPgan(self.config)
+        self.discriminator=nn.ModuleDict({'msd':MultiScaleDiscriminator(), 'mpd':MultiPeriodDiscriminator(periods=self.config['model_args']['discriminator_periods'])})
 
     def build_losses_and_metrics(self):
-        self.mix_loss=HiFiloss(self.config)
+        self.mix_loss=ddsploss(self.config)
 
     def Gforward(self, sample, infer=False):
         """
@@ -205,7 +207,7 @@ class ddspgan(GanBaseTask):
             1. run the full model
             2. calculate losses if not infer
         """
-        wav=self.generator(x=sample['mel'], f0=sample['f0'])
+        wav=self.generator(mel=sample['mel'], f0=sample['f0'])
         return {'audio':wav}
 
     def Dforward(self, Goutput):
