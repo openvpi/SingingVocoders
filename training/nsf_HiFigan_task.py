@@ -213,6 +213,37 @@ class nsf_HiFigan(GanBaseTask):
         mpd_out,mpd_featrue=self.discriminator['mpd'](Goutput)
         return (msd_out,msd_featrue),(mpd_out,mpd_featrue)
 
+    def _training_step(self, sample, batch_idx):
+        """
+        :return: total loss: torch.Tensor, loss_log: dict, other_log: dict
+
+        """
+
+        log_diet = {}
+        opt_g, opt_d = self.optimizers()
+        Goutpt = self.Gforward(sample=sample)
+        Dfake = self.Dforward(Goutput=Goutpt['audio'].detach())
+        Dtrue = self.Dforward(Goutput=sample['audio'])
+        Dloss, Dlog = self.mix_loss.Dloss(Dfake=Dfake, Dtrue=Dtrue)
+        log_diet.update(Dlog)
+        opt_d.zero_grad()
+        self.manual_backward(Dloss)
+        opt_d.step()
+        GDfake = self.Dforward(Goutput=Goutpt['audio'])
+        GDtrue=self.Dforward(Goutput=sample['audio'])
+        GDloss, GDlog = self.mix_loss.GDloss(GDfake=GDfake,GDtrue=GDtrue)
+        log_diet.update(GDlog)
+        Auxloss, Auxlog = self.mix_loss.Auxloss(Goutput=Goutpt, sample=sample)
+
+        log_diet.update(Auxlog)
+        Dlosss=GDloss + Auxloss
+
+        opt_g.zero_grad()
+        self.manual_backward(Dlosss)
+        opt_g.step()
+
+        return log_diet
+
     def _validation_step(self, sample, batch_idx):
 
         wav=self.Gforward(sample)['audio']
