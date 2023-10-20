@@ -221,14 +221,23 @@ class nsf_HiFigan(GanBaseTask):
 
         log_diet = {}
         opt_g, opt_d = self.optimizers()
-        Goutpt = self.Gforward(sample=sample)
-        Dfake = self.Dforward(Goutput=Goutpt['audio'].detach())
-        Dtrue = self.Dforward(Goutput=sample['audio'])
+        # foeward generator start
+        Goutpt = self.Gforward(sample=sample)  #y_g_hat =Goutpt
+        # foeward generator start
+
+        #foeward discriminator start
+
+        Dfake = self.Dforward(Goutput=Goutpt['audio'].detach()) #y_g_hat =Goutpt
+        Dtrue = self.Dforward(Goutput=sample['audio']) #y =sample['audio']
         Dloss, Dlog = self.mix_loss.Dloss(Dfake=Dfake, Dtrue=Dtrue)
         log_diet.update(Dlog)
-        opt_d.zero_grad()
+        # foeward discriminator end
+        #opt discriminator start
+        opt_d.zero_grad()  #clean discriminator grad
         self.manual_backward(Dloss)
         opt_d.step()
+        # opt discriminator end
+        # opt generator start
         GDfake = self.Dforward(Goutput=Goutpt['audio'])
         GDtrue=self.Dforward(Goutput=sample['audio'])
         GDloss, GDlog = self.mix_loss.GDloss(GDfake=GDfake,GDtrue=GDtrue)
@@ -238,10 +247,10 @@ class nsf_HiFigan(GanBaseTask):
         log_diet.update(Auxlog)
         Dlosss=GDloss + Auxloss
 
-        opt_g.zero_grad()
+        opt_g.zero_grad() #clean generator grad
         self.manual_backward(Dlosss)
         opt_g.step()
-
+        # opt generator end
         return log_diet
 
     def _validation_step(self, sample, batch_idx):
