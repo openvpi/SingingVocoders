@@ -59,15 +59,15 @@ task_cls: training.nsf_HiFigan_task.nsf_HiFigan
 discriminate_optimizer_args:
   optimizer_cls: torch.optim.AdamW
   lr: 0.0001
-  beta1: 0.9
-  beta2: 0.98
+  beta1: 0.8
+  beta2: 0.99
   weight_decay: 0
 
 generater_optimizer_args:
   optimizer_cls: torch.optim.AdamW
   lr: 0.0001
-  beta1: 0.9
-  beta2: 0.98
+  beta1: 0.8
+  beta2: 0.99
   weight_decay: 0
 
 lr_scheduler_args:
