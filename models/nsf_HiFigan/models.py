@@ -23,6 +23,14 @@ def init_weights(m, mean=0.0, std=0.01):
 def get_padding(kernel_size, dilation=1):
     return int((kernel_size * dilation - dilation) / 2)
 
+
+def upsample(signal, factor):
+    signal = signal.permute(0, 2, 1)
+    signal = F.interpolate(torch.cat((signal,signal[:,:,-1:]),2), size=signal.shape[-1] * factor + 1, mode='linear', align_corners=True)
+    signal = signal[:,:,:-1]
+    return signal.permute(0, 2, 1)
+    
+    
 class ResBlock1(torch.nn.Module):
     def __init__(self, h, channels, kernel_size=3, dilation=(1, 3, 5)):
         super(ResBlock1, self).__init__()
@@ -105,7 +113,7 @@ class SineGen(torch.nn.Module):
 
     def __init__(self, samp_rate, harmonic_num=0,
                  sine_amp=0.1, noise_std=0.003,
-                 voiced_threshold=0):
+                 voiced_threshold=0, use_chroma=False):
         super(SineGen, self).__init__()
         self.sine_amp = sine_amp
         self.noise_std = noise_std
@@ -113,6 +121,7 @@ class SineGen(torch.nn.Module):
         self.dim = self.harmonic_num + 1
         self.sampling_rate = samp_rate
         self.voiced_threshold = voiced_threshold
+        self.use_chroma = use_chroma
 
     def _f02uv(self, f0):
         # generate uv signal
@@ -127,34 +136,10 @@ class SineGen(torch.nn.Module):
         rad_values = (f0_values / self.sampling_rate).fmod(1.)  # %1意味着n_har的乘积无法后处理优化
         rand_ini = torch.rand(1, self.dim, device=f0_values.device)
         rand_ini[:, 0] = 0
+        rad_values = upsample(rad_values, upp)
         rad_values[:, 0, :] += rand_ini
-        is_half = rad_values.dtype is not torch.float32
-        tmp_over_one = torch.cumsum(rad_values.double(), 1)  # % 1  #####%1意味着后面的cumsum无法再优化
-        if is_half:
-            tmp_over_one = tmp_over_one.half()
-        else:
-            tmp_over_one = tmp_over_one.float()
-        tmp_over_one *= upp
-        tmp_over_one = F.interpolate(
-            tmp_over_one.transpose(2, 1), scale_factor=upp,
-            mode='linear', align_corners=True
-        ).transpose(2, 1)
-        rad_values = F.interpolate(rad_values.transpose(2, 1), scale_factor=upp, mode='nearest').transpose(2, 1)
-        tmp_over_one = tmp_over_one.fmod(1.)
-        diff = F.conv2d(
-            tmp_over_one.unsqueeze(1), torch.FloatTensor([[[[-1.], [1.]]]]).to(tmp_over_one.device),
-            stride=(1, 1), padding=0, dilation=(1, 1)
-        ).squeeze(1)  # Equivalent to torch.diff, but able to export ONNX
-        cumsum_shift = (diff < 0).double()
-        cumsum_shift = torch.cat((
-            torch.zeros((f0_values.size()[0], 1, self.dim), dtype=torch.double).to(f0_values.device),
-            cumsum_shift
-        ), dim=1)
-        sines = torch.sin(torch.cumsum(rad_values.double() + cumsum_shift, dim=1) * 2 * np.pi)
-        if is_half:
-            sines = sines.half()
-        else:
-            sines = sines.float()
+        sines = torch.sin(torch.cumsum(rad_values.double(), dim=1) * 2 * np.pi)
+        sines = sines.to(f0_values)
         return sines
 
     @torch.no_grad()
@@ -166,10 +151,17 @@ class SineGen(torch.nn.Module):
         output uv: tensor(batchsize=1, length, 1)
         """
         f0 = f0.unsqueeze(-1)
-        fn = torch.multiply(f0, torch.arange(1, self.dim + 1, device=f0.device).reshape((1, 1, -1)))
+        if self.use_chroma:
+            levels = 2.0 ** torch.arange( - (self.dim // 2), (self.dim + 1) // 2, device=f0.device)
+        else:
+            levels = torch.arange(1, self.dim + 1, device=f0.device)
+        fn = torch.multiply(f0, levels.reshape((1, 1, -1)))
         sine_waves = self._f02sine(fn, upp) * self.sine_amp
+        mask = (fn > 30).float() * (fn < 2100).float()
+        mask = upsample(mask, upp)
+        sine_waves = sine_waves * mask
         uv = (f0 > self.voiced_threshold).float()
-        uv = F.interpolate(uv.transpose(2, 1), scale_factor=upp, mode='nearest').transpose(2, 1)
+        uv = upsample(uv, upp)
         noise_amp = uv * self.noise_std + (1 - uv) * self.sine_amp / 3
         noise = noise_amp * torch.randn_like(sine_waves)
         sine_waves = sine_waves * uv + noise
@@ -195,15 +187,16 @@ class SourceModuleHnNSF(torch.nn.Module):
     """
 
     def __init__(self, sampling_rate, harmonic_num=0, sine_amp=0.1,
-                 add_noise_std=0.003, voiced_threshold=0):
+                 add_noise_std=0.003, voiced_threshold=0, use_chroma=False):
         super(SourceModuleHnNSF, self).__init__()
 
         self.sine_amp = sine_amp
         self.noise_std = add_noise_std
-
+        self.use_chroma = use_chroma
+        
         # to produce sine waveforms
         self.l_sin_gen = SineGen(sampling_rate, harmonic_num,
-                                 sine_amp, add_noise_std, voiced_threshold)
+                                 sine_amp, add_noise_std, voiced_threshold, use_chroma)
 
         # to merge source harmonics into a single excitation
         self.l_linear = torch.nn.Linear(harmonic_num + 1, 1)
@@ -211,7 +204,10 @@ class SourceModuleHnNSF(torch.nn.Module):
 
     def forward(self, x, upp):
         sine_wavs = self.l_sin_gen(x, upp)
-        sine_merge = self.l_tanh(self.l_linear(sine_wavs))
+        if self.use_chroma:
+            sine_merge = torch.mean(sine_wavs, dim=-1, keepdim=True)
+        else:
+            sine_merge = self.l_tanh(self.l_linear(sine_wavs))
         return sine_merge
 
 
@@ -223,7 +219,8 @@ class Generator(torch.nn.Module):
         self.num_upsamples = len(h.upsample_rates)
         self.m_source = SourceModuleHnNSF(
             sampling_rate=h.sampling_rate,
-            harmonic_num=8
+            harmonic_num=8,
+            use_chroma=False,
         )
         self.noise_convs = nn.ModuleList()
         self.conv_pre = weight_norm(Conv1d(h.num_mels, h.upsample_initial_channel, 7, 1, padding=3))
