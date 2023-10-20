@@ -296,15 +296,15 @@ class GanBaseTask(pl.LightningModule):
             Dtrue = self.Dforward(Goutput=sample['audio'])
             Dloss, Dlog = self.mix_loss.Dloss(Dfake=Dfake, Dtrue=Dtrue)
             log_diet.update(Dlog)
+            # if self.clip_grad_norm is not None:
+            #     self.manual_backward(Dloss/self.clip_grad_norm)
+            # else:
+            opt_d.zero_grad()
+            self.manual_backward(Dloss)
             if self.clip_grad_norm is not None:
-                self.manual_backward(Dloss/self.clip_grad_norm)
-            else:
-                self.manual_backward(Dloss)
-            if (batch_idx + 1) % self.accumulate_grad_batches == 0:
-                if self.clip_grad_norm is not None:
-                    self.clip_gradients(opt_d, gradient_clip_val=self.clip_grad_norm, gradient_clip_algorithm="norm")
-                opt_d.step()
-                opt_d.zero_grad()
+                self.clip_gradients(opt_d, gradient_clip_val=self.clip_grad_norm, gradient_clip_algorithm="norm")
+            opt_d.step()
+            opt_d.zero_grad()
         if not aux_only:
             GDfake = self.Dforward(Goutput=Goutpt['audio'])
             GDtrue=self.Dforward(Goutput=sample['audio'])
@@ -318,15 +318,18 @@ class GanBaseTask(pl.LightningModule):
         else:
             Dlosss=Auxloss
 
+        # if self.clip_grad_norm is not None:
+        #     self.manual_backward(Dlosss / self.clip_grad_norm)
+        # else:
+        #     self.manual_backward(Dlosss)
+        # if (batch_idx + 1) % self.accumulate_grad_batches == 0:
+        opt_g.zero_grad()
+        self.manual_backward(Dlosss)
         if self.clip_grad_norm is not None:
-            self.manual_backward(Dlosss / self.clip_grad_norm)
-        else:
-            self.manual_backward(Dlosss)
-        if (batch_idx + 1) % self.accumulate_grad_batches == 0:
-            if self.clip_grad_norm is not None:
-                self.clip_gradients(opt_g, gradient_clip_val=self.clip_grad_norm, gradient_clip_algorithm="norm")
-            opt_g.step()
-            opt_g.zero_grad()
+            self.clip_gradients(opt_g, gradient_clip_val=self.clip_grad_norm, gradient_clip_algorithm="norm")
+        opt_g.step()
+
+
 
         return log_diet
 
