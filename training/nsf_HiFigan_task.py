@@ -29,7 +29,7 @@ from utils.wav2mel import PitchAdjustableMelSpectrogram
 def spec_to_figure(spec, vmin=None, vmax=None):
     if isinstance(spec, torch.Tensor):
         spec = spec.cpu().numpy()
-    fig = plt.figure(figsize=(12, 9))
+    fig = plt.figure(figsize=(12, 9),dpi=100)
     plt.pcolor(spec.T, vmin=vmin, vmax=vmax)
     plt.tight_layout()
     return fig
@@ -270,7 +270,7 @@ class nsf_HiFigan(GanBaseTask):
             stfts_log= torch.log(torch.clamp(stfts, min=1e-7))
             # self.plot_mel(batch_idx, GTmels.transpose(1,2), mels.transpose(1,2), name=f'diffmel_{batch_idx}')
             self.plot_mel(batch_idx, Gstfts_log10.transpose(1,2), stfts_log10.transpose(1,2), name=f'HIFImel_{batch_idx}/log10')
-            self.plot_mel(batch_idx, Gstfts_log.transpose(1, 2), stfts_log.transpose(1, 2), name=f'HIFImel_{batch_idx}/log')
+            # self.plot_mel(batch_idx, Gstfts_log.transpose(1, 2), stfts_log.transpose(1, 2), name=f'HIFImel_{batch_idx}/log')
             self.logger.experiment.add_audio(f'diff_{batch_idx}_', wav,
                                              sample_rate=self.config['audio_sample_rate'],
                                              global_step=self.global_step)

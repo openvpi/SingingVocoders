@@ -50,18 +50,11 @@ model_args:
   resblock: "1"
 
 # training
-use_midi_loss: true
-use_bound_loss: true
+
 task_cls: training.nsf_HiFigan_task.nsf_HiFigan
 
 
-sort_by_len: true
-optimizer_args:
-  optimizer_cls: torch.optim.AdamW
-  lr: 0.0001
-  beta1: 0.9
-  beta2: 0.98
-  weight_decay: 0
+
 
 discriminate_optimizer_args:
   optimizer_cls: torch.optim.AdamW
@@ -82,9 +75,9 @@ lr_scheduler_args:
   warmup_steps: 5000
   min_lr: 0.00001
 
-clip_grad_norm: 1
-accumulate_grad_batches: 1
-sampler_frame_count_grid: 6
+clip_grad_norm: null
+#accumulate_grad_batches: 1
+#sampler_frame_count_grid: 6
 ds_workers: 4
 dataloader_prefetch_factor: 2
 
@@ -107,8 +100,8 @@ permanent_ckpt_interval: 40000
 ###########
 pl_trainer_accelerator: 'auto'
 pl_trainer_devices: 'auto'
-#pl_trainer_precision: '32-true'
-pl_trainer_precision: 'bf16'
+pl_trainer_precision: '32-true'
+#pl_trainer_precision: 'bf16'
 pl_trainer_num_nodes: 1
 pl_trainer_strategy: 'auto'
 ddp_backend: 'nccl' # choose from 'gloo', 'nccl', 'nccl_no_p2p'
