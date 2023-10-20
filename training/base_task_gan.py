@@ -114,7 +114,7 @@ class GanBaseTask(pl.LightningModule):
         # self.max_val_batch_frames = self.config['max_val_batch_frames']
         # self.max_val_batch_size = self.config['max_val_batch_size']
 
-        self.accumulate_grad_batches = self.config['accumulate_grad_batches']
+        # self.accumulate_grad_batches = self.config['accumulate_grad_batches']
         self.clip_grad_norm = self.config['clip_grad_norm']
 
         self.training_sampler = None
@@ -376,11 +376,11 @@ class GanBaseTask(pl.LightningModule):
 
         """
 
-        if self.skip_immediate_validations == 0 and self.global_step != 0:
-            self.skip_immediate_validation = True
-            self.skip_immediate_validations = 1
-        if self.global_step == 0:
-            self.skip_immediate_validations = 1
+        # if self.skip_immediate_validations == 0 and self.global_step != 0:
+        #     self.skip_immediate_validation = True
+        #     self.skip_immediate_validations = 1
+        # if self.global_step == 0:
+        #     self.skip_immediate_validations = 1
 
         if self.skip_immediate_validation:
             rank_zero_debug(f"Skip validation {batch_idx}")

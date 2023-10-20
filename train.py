@@ -92,7 +92,7 @@ def train(config, exp_name, work_dir):
             version='lastest'
         ),
         # gradient_clip_val=config['clip_grad_norm'],
-        val_check_interval=config['val_check_interval'] * config['accumulate_grad_batches'],
+        val_check_interval=config['val_check_interval'] ,#* config['accumulate_grad_batches'],
         # so this is global_steps
         check_val_every_n_epoch=None,
         log_every_n_steps=1,
