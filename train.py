@@ -99,7 +99,7 @@ def train(config, exp_name, work_dir):
         max_steps=config['max_updates'],
         use_distributed_sampler=True,
         num_sanity_val_steps=config['num_sanity_val_steps'],
-        accumulate_grad_batches=config['accumulate_grad_batches']
+        # accumulate_grad_batches=config['accumulate_grad_batches']
     )
     trainer.fit(task, ckpt_path=get_latest_checkpoint_path(work_dir))
 

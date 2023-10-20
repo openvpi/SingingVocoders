@@ -10,7 +10,7 @@ import numpy as np
 import torch.utils.data
 from lightning.pytorch.utilities.rank_zero import rank_zero_debug, rank_zero_info, rank_zero_only
 from torch import nn
-
+# torch.nn.utils.weight_norm
 from torch.utils.data import Dataset
 from torchmetrics import Metric, MeanMetric
 
@@ -296,7 +296,10 @@ class GanBaseTask(pl.LightningModule):
             Dtrue = self.Dforward(Goutput=sample['audio'])
             Dloss, Dlog = self.mix_loss.Dloss(Dfake=Dfake, Dtrue=Dtrue)
             log_diet.update(Dlog)
-            self.manual_backward(Dloss)
+            if self.clip_grad_norm is not None:
+                self.manual_backward(Dloss/self.clip_grad_norm)
+            else:
+                self.manual_backward(Dloss)
             if (batch_idx + 1) % self.accumulate_grad_batches == 0:
                 if self.clip_grad_norm is not None:
                     self.clip_gradients(opt_d, gradient_clip_val=self.clip_grad_norm, gradient_clip_algorithm="norm")
@@ -311,9 +314,14 @@ class GanBaseTask(pl.LightningModule):
 
         log_diet.update(Auxlog)
         if not aux_only:
-            self.manual_backward(GDloss + Auxloss)
+            Dlosss=GDloss + Auxloss
         else:
-            self.manual_backward(Auxloss)
+            Dlosss=Auxloss
+
+        if self.clip_grad_norm is not None:
+            self.manual_backward(Dlosss / self.clip_grad_norm)
+        else:
+            self.manual_backward(Dlosss)
         if (batch_idx + 1) % self.accumulate_grad_batches == 0:
             if self.clip_grad_norm is not None:
                 self.clip_gradients(opt_g, gradient_clip_val=self.clip_grad_norm, gradient_clip_algorithm="norm")
@@ -431,7 +439,8 @@ class GanBaseTask(pl.LightningModule):
         elif isinstance(model, nn.ModuleDict):
             parameterslist = []
             for i in model:
-                parameterslist = parameterslist + list(model[i].parameters())
+                # parameterslist = parameterslist + list(model[i].parameters())
+                parameterslist.append({'params': model[i].parameters()})
             optimizer = build_object_from_class_name(
                 optimizer_args['optimizer_cls'],
                 torch.optim.Optimizer,

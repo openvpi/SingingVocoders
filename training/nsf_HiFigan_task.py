@@ -124,6 +124,53 @@ class nsf_HiFigan_dataset(Dataset):
         }
 
 
+class stftlog:
+    def __init__(self,
+        n_fft=2048,
+        win_length=2048,
+        hop_length=512,
+
+        center=False,):
+        self.hop_length=hop_length
+        self.win_size=win_length
+        self.n_fft = n_fft
+        self.win_size = win_length
+        self.center = center
+        self.hann_window = {}
+    def exc(self,y):
+
+
+        hann_window_key = f"{y.device}"
+        if hann_window_key not in self.hann_window:
+            self.hann_window[hann_window_key] = torch.hann_window(
+                self.win_size, device=y.device
+            )
+
+
+        y = torch.nn.functional.pad(
+            y.unsqueeze(1),
+            (
+                int((self.win_size - self.hop_length) // 2),
+                int((self.win_size - self.hop_length+1) // 2),
+            ),
+            mode="reflect",
+        )
+        y = y.squeeze(1)
+
+        spec = torch.stft(
+            y,
+            self.n_fft,
+            hop_length=self.hop_length,
+            win_length=self.win_size,
+            window=self.hann_window[hann_window_key],
+            center=self.center,
+            pad_mode="reflect",
+            normalized=False,
+            onesided=True,
+            return_complex=True,
+        ).abs()
+        return spec
+
 class nsf_HiFigan(GanBaseTask):
     def __init__(self, config):
         super().__init__(config)
@@ -131,6 +178,7 @@ class nsf_HiFigan(GanBaseTask):
         f_max=None,
         n_mels=256,)
         self.logged_gt_wav = set()
+        self.stft=stftlog()
 
     def build_dataset(self):
 
@@ -172,9 +220,17 @@ class nsf_HiFigan(GanBaseTask):
         with torch.no_grad():
 
             # self.TF = self.TF.cpu()
-            mels = torch.log10(torch.clamp(self.TF(wav.squeeze(0).cpu().float()), min=1e-5))
-            GTmels = torch.log10(torch.clamp(self.TF(sample['audio'].squeeze(0).cpu().float()), min=1e-5))
-            self.plot_mel(batch_idx, GTmels.transpose(1,2), mels.transpose(1,2), name=f'diffmel_{batch_idx}')
+            # mels = torch.log10(torch.clamp(self.TF(wav.squeeze(0).cpu().float()), min=1e-5))
+            # GTmels = torch.log10(torch.clamp(self.TF(sample['audio'].squeeze(0).cpu().float()), min=1e-5))
+            stfts=self.stft.exc(wav.squeeze(0).cpu().float())
+            Gstfts=self.stft.exc(sample['audio'].squeeze(0).cpu().float())
+            Gstfts_log10=torch.log10(torch.clamp(Gstfts, min=1e-7))
+            Gstfts_log = torch.log(torch.clamp(Gstfts, min=1e-7))
+            stfts_log10=torch.log10(torch.clamp(stfts, min=1e-7))
+            stfts_log= torch.log(torch.clamp(stfts, min=1e-7))
+            # self.plot_mel(batch_idx, GTmels.transpose(1,2), mels.transpose(1,2), name=f'diffmel_{batch_idx}')
+            self.plot_mel(batch_idx, Gstfts_log10.transpose(1,2), stfts_log10.transpose(1,2), name=f'HIFImel_{batch_idx}/log10')
+            self.plot_mel(batch_idx, Gstfts_log.transpose(1, 2), stfts_log.transpose(1, 2), name=f'HIFImel_{batch_idx}/log')
             self.logger.experiment.add_audio(f'diff_{batch_idx}_', wav,
                                              sample_rate=self.config['audio_sample_rate'],
                                              global_step=self.global_step)
