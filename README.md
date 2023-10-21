@@ -6,6 +6,10 @@ A collection of neural vocoders suitable for singing voice synthesis tasks.
 
 [train.py](train.py) --config 配置文件 --exp_name ckpt名字 --work_dir 工作目录（可选）
 
+# 预处理 
+
+[process.py](process.py) todo
+
 
 
 
