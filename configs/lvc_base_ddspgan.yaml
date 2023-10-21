@@ -51,6 +51,15 @@ model_args:
   type: 'CombSub' #Sins
   n_mag_harmonic: 512
   n_mag_noise: 256
+  lvc_noise_channels: 8
+  lvc_latent_channels: 8
+  lvc_block_nums: 3
+  lvc_layers_each_block: 10
+  lvc_kernel_size: 7
+  kpnet_hidden_channels: 128
+  kpnet_conv_size: 3
+  dropout: 0.0
+  up_condition: 2 #null
 
 #  n_harmonics: 128
 #  n_mag_noise: 256
@@ -96,7 +105,7 @@ log_interval: 100
 num_sanity_val_steps: 1  # steps of validation at the beginning
 val_check_interval: 1000
 num_ckpt_keep: 5
-max_updates: 100000
+max_updates: 800000
 permanent_ckpt_start: 200000
 permanent_ckpt_interval: 40000
 

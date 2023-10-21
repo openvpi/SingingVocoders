@@ -130,7 +130,41 @@ class Audio2Mel(torch.nn.Module):
         # print('og_mel_spec:', log_mel_spec.shape)
         log_mel_spec = log_mel_spec.squeeze(2) # mono
         return log_mel_spec
-        
+
+
+class GLU(torch.nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, x):
+        out, gate = x.chunk(2, dim=self.dim)
+        return out * gate.sigmoid()
+
+class Upspamper(torch.nn.Module):
+
+    def __init__(self):
+        super().__init__()
+        self.c1 = torch.nn.Conv2d(1, 8, kernel_size=1)
+        self.UP = torch.nn.ConvTranspose2d(4, 8, [3, 32], stride=[1, 2], padding=[1, 15])
+        self.Glu = GLU(1)
+        self.c2 = torch.nn.Conv2d(4, 8, kernel_size=3,padding=1)
+        self.c3 = torch.nn.Conv2d(4, 2, kernel_size=1)
+
+
+
+    def forward(self, x):
+        x = torch.unsqueeze(x, 1)
+        x=self.Glu (self.c1(x))
+        # x=self.net(x)
+
+        x = self.Glu (self.UP(x))
+        x=self.Glu(self.c2(x))+x
+        x =self.Glu(self.c3(x))
+
+        spectrogram = torch.squeeze(x, 1)
+        return spectrogram
+
 class Sins(torch.nn.Module):
     def __init__(self, 
             sampling_rate,
@@ -138,7 +172,12 @@ class Sins(torch.nn.Module):
             win_length,
             n_harmonics,
             n_mag_noise,
-            n_mels=80):
+            n_mels=80,lvc_noise_channels=8,lvc_latent_channels=8,  lvc_block_nums=2,
+                 lvc_layers_each_block=5,
+                 lvc_kernel_size=3,
+                 kpnet_hidden_channels=128,
+                 kpnet_conv_size=1,
+                 dropout=0.0,up_condition=2):
         super().__init__()
 
         print(' [DDSP Model] Sinusoids Additive Synthesiser')
@@ -155,18 +194,20 @@ class Sins(torch.nn.Module):
             'noise_magnitude': n_mag_noise,
         }
         self.mel2ctrl = Mel2Control(n_mels, split_map)
-
-        self.lvc=LVCNetGenerator(in_channels=8,
+        lvc_con=block_size//up_condition if up_condition is not None else block_size
+        self.lvc=LVCNetGenerator(in_channels=lvc_noise_channels,
                  out_channels=1,
-                 inner_channels=10,
+                 inner_channels=lvc_latent_channels,
                  cond_channels=n_mag_noise,
-                 cond_hop_length=block_size,
-                 lvc_block_nums=1,
-                 lvc_layers_each_block=5,
-                 lvc_kernel_size=3,
-                 kpnet_hidden_channels=64,
-                 kpnet_conv_size=1,
-                 dropout=0.0)
+                 cond_hop_length=lvc_con,
+                 lvc_block_nums=lvc_block_nums,
+                 lvc_layers_each_block=lvc_layers_each_block,
+                 lvc_kernel_size=lvc_kernel_size,
+                 kpnet_hidden_channels=kpnet_hidden_channels,
+                 kpnet_conv_size=kpnet_conv_size,
+                 dropout=dropout)
+        self.lvc_noise_channels = lvc_noise_channels
+        self.upnet=torch.nn.Sequential(*[Upspamper() for i in range(up_condition//2)]) if up_condition is not None else torch.nn.Identity()
 
     def forward(self, mel_frames, f0_frames, initial_phase=None, infer=True, max_upsample_dim=32):
         '''
@@ -233,8 +274,8 @@ class Sins(torch.nn.Module):
         #                 torch.complex(noise_param, torch.zeros_like(noise_param)),
         #                 hann_window = True)
 
-        noise=torch.randn(harmonic.size()[0],8,harmonic.size()[1]).to(noise_param)
-        noise=self.lvc(noise,noise_param.transpose(1,2)).squeeze(1)
+        noise=torch.randn(harmonic.size()[0],self.lvc_noise_channels,harmonic.size()[1]).to(noise_param)
+        noise=self.lvc(noise,self.upnet(noise_param.transpose(1,2))).squeeze(1)
         signal = harmonic + noise
 
         return signal, phase, (harmonic, noise)
@@ -246,7 +287,12 @@ class CombSub(torch.nn.Module):
             win_length,
             n_mag_harmonic,
             n_mag_noise,
-            n_mels=80):
+            n_mels=80,lvc_noise_channels=8,lvc_latent_channels=8,  lvc_block_nums=2,
+                 lvc_layers_each_block=5,
+                 lvc_kernel_size=3,
+                 kpnet_hidden_channels=128,
+                 kpnet_conv_size=1,
+                 dropout=0.0,up_condition=2):
         super().__init__()
 
         print(' [DDSP Model] Combtooth Subtractive Synthesiser')
@@ -262,18 +308,22 @@ class CombSub(torch.nn.Module):
             'noise_magnitude': n_mag_noise
         }
         self.mel2ctrl = Mel2Control(n_mels, split_map)
-
-        self.lvc=LVCNetGenerator(in_channels=8,
+        lvc_con = block_size // up_condition if up_condition is not None else block_size
+        self.lvc=LVCNetGenerator(in_channels=lvc_noise_channels,
                  out_channels=1,
-                 inner_channels=10,
+                 inner_channels=lvc_latent_channels,
                  cond_channels=n_mag_noise,
-                 cond_hop_length=block_size,
-                 lvc_block_nums=1,
-                 lvc_layers_each_block=5,
-                 lvc_kernel_size=3,
-                 kpnet_hidden_channels=64,
-                 kpnet_conv_size=1,
-                 dropout=0.0)
+                 cond_hop_length=lvc_con,
+                 lvc_block_nums=lvc_block_nums,
+                 lvc_layers_each_block=lvc_layers_each_block,
+                 lvc_kernel_size=lvc_kernel_size,
+                 kpnet_hidden_channels=kpnet_hidden_channels,
+                 kpnet_conv_size=kpnet_conv_size,
+                 dropout=dropout)
+
+        self.lvc_noise_channels=lvc_noise_channels
+        self.upnet = torch.nn.Sequential(
+            *[Upspamper() for i in range(up_condition // 2)]) if up_condition is not None else torch.nn.Identity()
 
     def forward(self, mel_frames, f0_frames, initial_phase=None, infer=True, **kwargs):
         '''
@@ -337,8 +387,8 @@ class CombSub(torch.nn.Module):
         #                 torch.complex(noise_param, torch.zeros_like(noise_param)),
         #                 hann_window = True)
 
-        noise=torch.randn(harmonic.size()[0],8,harmonic.size()[1]).to(noise_param)
-        noise=self.lvc(noise,noise_param.transpose(1,2)).squeeze(1)
+        noise=torch.randn(harmonic.size()[0],self.lvc_noise_channels,harmonic.size()[1]).to(noise_param)
+        noise=self.lvc(noise,self.upnet(noise_param.transpose(1,2))).squeeze(1)
                         
         signal = harmonic + noise
 
