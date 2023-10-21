@@ -152,16 +152,16 @@ class SineGen(torch.nn.Module):
         """
         f0 = f0.unsqueeze(-1)
         if self.use_chroma:
-            levels = 2.0 ** torch.arange( - (self.dim // 2), (self.dim + 1) // 2, device=f0.device)
+            levels = 2.0 ** torch.arange( - (self.dim // 2), (self.dim + 1) // 2).to(f0)
         else:
-            levels = torch.arange(1, self.dim + 1, device=f0.device)
+            levels = torch.arange(1, self.dim + 1).to(f0)
         fn = torch.multiply(f0, levels.reshape((1, 1, -1)))
         sine_waves = self._f02sine(fn, upp) * self.sine_amp
         mask = (fn > 30).float() * (fn < 2100).float()
-        mask = upsample(mask, upp)
+        mask = upsample(mask, upp).to(sine_waves)
         sine_waves = sine_waves * mask
         uv = (f0 > self.voiced_threshold).float()
-        uv = upsample(uv, upp)
+        uv = upsample(uv, upp).to(sine_waves)
         noise_amp = uv * self.noise_std + (1 - uv) * self.sine_amp / 3
         noise = noise_amp * torch.randn_like(sine_waves)
         sine_waves = sine_waves * uv + noise
