@@ -133,7 +133,7 @@ class GanBaseTask(pl.LightningModule):
         self.automatic_optimization = False
         self.skip_immediate_validations = 0
 
-        self.aux_step = None
+        self.aux_step = self.config.get('aux_step')
         self.train_dataset = None
         self.valid_dataset = None
 
@@ -285,7 +285,7 @@ class GanBaseTask(pl.LightningModule):
         """
         aux_only = False
         if self.aux_step is not None:
-            if self.aux_step < self.global_step:
+            if self.aux_step > self.global_step:
                 aux_only = True
 
         log_diet = {}
