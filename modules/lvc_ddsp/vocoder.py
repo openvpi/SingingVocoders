@@ -234,7 +234,8 @@ class Sins(torch.nn.Module):
         src_allpass = torch.exp(1.j * np.pi * ctrls['harmonic_phase'])
         src_allpass = torch.cat((src_allpass, src_allpass[:,-1:,:]), 1)
         amplitudes_frames = torch.exp(ctrls['amplitudes'])/ 128
-        noise_param = torch.exp(ctrls['noise_magnitude']) / 128
+        # noise_param = torch.exp(ctrls['noise_magnitude']) / 128
+        noise_param = ctrls['noise_magnitude']
         
         # sinusoids exciter signal 
         amplitudes_frames = remove_above_fmax(amplitudes_frames, f0_frames, self.sampling_rate / 2, level_start = 1)
@@ -349,8 +350,8 @@ class CombSub(torch.nn.Module):
         src_allpass = torch.exp(1.j * np.pi * ctrls['harmonic_phase'])
         src_allpass = torch.cat((src_allpass, src_allpass[:,-1:,:]), 1)
         src_param = torch.exp(ctrls['harmonic_magnitude'])
-        noise_param = torch.exp(ctrls['noise_magnitude']) / 128
-        
+        # noise_param = torch.exp(ctrls['noise_magnitude']) / 128
+        noise_param = ctrls['noise_magnitude']
         # combtooth exciter signal
         combtooth = torch.sinc(self.sampling_rate * x / (f0 + 1e-3))
         combtooth = combtooth.squeeze(-1) 

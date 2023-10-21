@@ -1,4 +1,8 @@
 # preprocessing
+base_config:
+  - configs/base.yaml
+
+
 binarizer_cls: preprocessing.BaseBinarizer
 raw_data_dir: []
 binary_data_dir: null
