@@ -1,3 +1,8 @@
 
 
-num_val: 5
+
+data_input_path: []
+data_out_path: []
+val_num: 1
+
+

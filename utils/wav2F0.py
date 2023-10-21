@@ -69,6 +69,8 @@ def get_pitch_parselmouth(wav_data, length, hparams, speed=1, interp_uv=False):
         f0 = np.pad(f0, (0, length - len(f0)))
     f0 = f0[: length]
     uv = f0 == 0
+    if uv.all():
+        return None,None
     if interp_uv:
         f0, uv = interp_f0(f0, uv)
     return f0, uv
