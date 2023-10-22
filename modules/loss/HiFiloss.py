@@ -44,7 +44,7 @@ class HiFiloss(nn.Module):
         (Fmsd_out, _), (Fmpd_out, _)=Dfake
         (Tmsd_out, _), (Tmpd_out, _)=Dtrue
         msdloss, msdrlosses, msdglosses, _, _=self.discriminator_loss(Tmsd_out,Fmsd_out)
-        mpdloss, mpdrlosses, mpdglosses, _, _ = self.discriminator_loss(Tmsd_out, Fmsd_out)
+        mpdloss, mpdrlosses, mpdglosses, _, _ = self.discriminator_loss(Tmpd_out, Fmpd_out)
         loss=msdloss+mpdloss
         return loss,{'DmsdlossF':msdglosses,'DmsdlossT':msdrlosses,'DmpdlossT':mpdrlosses,'DmpdlossF':mpdglosses}
 

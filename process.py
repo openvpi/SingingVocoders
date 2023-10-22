@@ -79,7 +79,7 @@ def run_worch(path_list,num_cpu,Q:Queue,config):
 def runx(config,  num_cpu, strx):
     config = pathlib.Path(config)
     config = read_full_config(config)
-    print_config(config)
+    # print_config(config)
     if strx is None:
         strx=1
     else:

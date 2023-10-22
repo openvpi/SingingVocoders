@@ -6,7 +6,7 @@ from modules.loss.stft_loss import warp_stft
 from utils.wav2mel import PitchAdjustableMelSpectrogram
 
 
-class ddsploss(nn.Module):
+class univloss(nn.Module):
     def __init__(self,config:dict):
         super().__init__()
         self.mel=PitchAdjustableMelSpectrogram( sample_rate=config['audio_sample_rate'],
@@ -42,12 +42,12 @@ class ddsploss(nn.Module):
 
     def Dloss(self,Dfake, Dtrue):
 
-        (Fmsd_out, _), (Fmpd_out, _)=Dfake
-        (Tmsd_out, _), (Tmpd_out, _)=Dtrue
-        msdloss, msdrlosses, msdglosses, _, _=self.discriminator_loss(Tmsd_out,Fmsd_out)
+        (Fmrd_out, _), (Fmpd_out, _)=Dfake
+        (Tmrd_out, _), (Tmpd_out, _)=Dtrue
+        mrdloss, mrdrlosses, mrdglosses, _, _=self.discriminator_loss(Tmrd_out,Fmrd_out)
         mpdloss, mpdrlosses, mpdglosses, _, _ = self.discriminator_loss(Tmpd_out, Fmpd_out)
-        loss=msdloss+mpdloss
-        return loss,{'DmsdlossF':msdglosses,'DmsdlossT':msdrlosses,'DmpdlossT':mpdrlosses,'DmpdlossF':mpdglosses}
+        loss=mrdloss+mpdloss
+        return loss,{'DmrdlossF':mrdglosses,'DmrdlossT':mrdrlosses,'DmpdlossT':mpdrlosses,'DmpdlossF':mpdglosses}
 
     def feature_loss(self,fmap_r, fmap_g):
         loss = 0
@@ -60,15 +60,15 @@ class ddsploss(nn.Module):
     def GDloss(self,GDfake,GDtrue):
         loss = 0
         gen_losses = []
-        msd_losses=0
+        mrd_losses=0
         mpd_losses = 0
-        (msd_out, Fmsd_featrue), (mpd_out, Fmpd_featrue)=GDfake
-        (_, Tmsd_featrue), (_, Tmpd_featrue) = GDtrue
-        for dg in msd_out:
+        (mrd_out, Fmrd_featrue), (mpd_out, Fmpd_featrue)=GDfake
+        (_, Tmrd_featrue), (_, Tmpd_featrue) = GDtrue
+        for dg in mrd_out:
             l = torch.mean((1 - dg) ** 2)
             gen_losses.append(l.item())
             # loss += l
-            msd_losses=l+msd_losses
+            mrd_losses=l+mrd_losses
 
         for dg in mpd_out:
             l = torch.mean((1 - dg) ** 2)
@@ -76,13 +76,13 @@ class ddsploss(nn.Module):
             # loss += l
             mpd_losses=l+mpd_losses
 
-        msd_featrue_loss=self.feature_loss(Tmsd_featrue,Fmsd_featrue)
+        mrd_featrue_loss=self.feature_loss(Tmrd_featrue,Fmrd_featrue)
         mpd_featrue_loss = self.feature_loss(Tmpd_featrue, Fmpd_featrue)
         # loss +=msd_featrue_loss
         # loss +=mpd_featrue_loss
-        loss= msd_featrue_loss+mpd_featrue_loss+mpd_losses+msd_losses
+        loss= mrd_featrue_loss+mpd_featrue_loss+mpd_losses+mrd_losses
         # (msd_losses, mpd_losses), (msd_featrue_loss, mpd_featrue_loss), gen_losses
-        return loss, {'Gmsdloss':msd_losses,'Gmpdloss':mpd_losses,'Gmsd_featrue_loss':msd_featrue_loss,'Dmpd_featrue_loss':mpd_featrue_loss}
+        return loss, {'Gmrdloss':mrd_losses,'Gmpdloss':mpd_losses,'Gmrd_featrue_loss':mrd_featrue_loss,'Dmpd_featrue_loss':mpd_featrue_loss}
 
     # def Auxloss(self,Goutput, sample):
     #
