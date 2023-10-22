@@ -47,6 +47,35 @@ class downblock(nn.Module):
     def forward(self, x):
         return self.act1(self.out(self.act(self.c(x))))
 
+class ddsp_down(nn.Module):
+    def __init__(self,dims,downs:list):
+        super().__init__()
+
+        dl=[]
+        ppl=[]
+        downs.reverse()
+        self.fistpp=nn.Conv1d(1,dims,kernel_size=1)
+        for idx,i in enumerate(downs[:-1]):
+            if idx==0:
+                dl.append(downblock(i,1,dims))
+                ppl.append(nn.Conv1d(dims,dims,kernel_size=1))
+            else:
+                dl.append(downblock(i,dims*idx,dims*(idx + 1)))
+                ppl.append(nn.Conv1d(dims*(idx + 1), dims, kernel_size=1))
+        self.downs = nn.ModuleList(dl)
+        self.ppls = nn.ModuleList(ppl)
+    def forward(self,x):
+        spec=[]
+        spec.append(self.fistpp(x))
+
+        for dl,ppl in zip(self.downs,self.ppls ):
+            x=dl(x)
+            spec.append(ppl(x))
+        spec.reverse()
+        return spec
+
+
+
 class GLU(torch.nn.Module):
     def __init__(self, dim):
         super().__init__()
@@ -90,6 +119,7 @@ class ddspUnivNet(torch.nn.Module):
         self.ddsp=DDSP(h)
 
 
+
         in_channels = h['model_args']['cond_in_channels']
         out_channels = h['model_args']['out_channels']
         inner_channels = h['model_args']['cg_channels']
@@ -100,6 +130,8 @@ class ddspUnivNet(torch.nn.Module):
         kpnet_hidden_channels =  h['model_args']['lvc_hidden_channels']
         kpnet_conv_size =  h['model_args']['lvc_conv_size']
         dropout =  h['model_args']['dropout']
+
+        self.ddspd = ddsp_down(dims=inner_channels,downs=upsample_ratios)
 
         upmel=h['model_args'].get('upmel')
         self.upblocke=torch.nn.Sequential(*[Upspamper() for i in range(upmel//2)]) if upmel is not None else torch.nn.Identity()
