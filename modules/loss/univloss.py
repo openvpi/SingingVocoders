@@ -18,8 +18,13 @@ class univloss(nn.Module):
         n_mels=config['audio_num_mel_bins'],)
         self.L1loss=nn.L1Loss()
         self.labauxloss=config.get('lab_aux_loss',45)
-        self.stft=warp_stft({'fft_sizes':[2048,1024, 2048, 512,1024],'hop_sizes':[512,120, 240, 50,256],'win_lengths':[2048,600, 1200, 240,512]})
+        # self.stft=warp_stft({'fft_sizes':[1024, 2048, 512,],'hop_sizes':[120, 240, 50,],'win_lengths':[600, 1200, 240,]})
 
+        self.stft = warp_stft({'fft_sizes': [2048, 2048, 4096, 1024, 512, 256, 128], 'hop_sizes': [512, 240, 480, 100, 50, 25, 12],
+                           'win_lengths': [2048, 1200, 2400, 480, 240, 120, 60]})
+        # fft_sizes = [2048, 4096, 1024, 512, 256, 128],
+        # hop_sizes = [240, 480, 100, 50, 25, 12],
+        # win_lengths = [1200, 2400, 480, 240, 120, 60]
 
     def discriminator_loss(self,disc_real_outputs, disc_generated_outputs):
         loss = 0

@@ -22,6 +22,9 @@ volume_aug_prob: 0.5
 mel_vmin: -6. #-6.
 mel_vmax: 1.5
 
+aux_step: 400000
+lab_aux_loss: 2.5
+
 
 audio_sample_rate: 44100
 audio_num_mel_bins: 128
@@ -56,15 +59,17 @@ model_args:
 
 
 
-  upsample_rates: [ 8,8,4,2 ]
+  upsample_rates: [ 8,8,4 ]
   cond_in_channels: 128
   out_channels: 1
   cg_channels: 32
   num_lvc_blocks: 4
-  lvc_kernels: 3
-  lvc_hidden_channels: 64
+  lvc_kernels: 5
+  lvc_hidden_channels: 96
   lvc_conv_size: 3
   dropout: 0.0
+  upmel: 2
+
 
 #  n_mag_harmonic: 512
 #  n_mag_noise: 256
@@ -86,14 +91,14 @@ task_cls: training.univnet.univnet_task
 
 discriminate_optimizer_args:
   optimizer_cls: torch.optim.AdamW
-  lr: 0.0001
+  lr: 0.0002
   beta1: 0.8
   beta2: 0.99
   weight_decay: 0
 
 generater_optimizer_args:
   optimizer_cls: torch.optim.AdamW
-  lr: 0.0001
+  lr: 0.0002
   beta1: 0.8
   beta2: 0.99
   weight_decay: 0
@@ -109,16 +114,16 @@ clip_grad_norm: null
 ds_workers: 4
 dataloader_prefetch_factor: 2
 
-batch_size: 3
+batch_size: 10
 
 
 
 num_valid_plots: 100
 log_interval: 100
 num_sanity_val_steps: 1  # steps of validation at the beginning
-val_check_interval: 1000
+val_check_interval: 8000
 num_ckpt_keep: 5
-max_updates: 100000
+max_updates: 800000
 permanent_ckpt_start: 200000
 permanent_ckpt_interval: 40000
 

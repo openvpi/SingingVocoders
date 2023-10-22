@@ -181,7 +181,12 @@ class univnet_task(GanBaseTask):
         n_mels=256,)
         self.logged_gt_wav = set()
         self.stft=stftlog()
-        self.noisec=config['model_args']['cond_in_channels']
+        upmel = config['model_args'].get('upmel')
+        self.upmel=upmel
+        # if upmel is not None:
+        #     self.noisec=config['model_args']['cond_in_channels']*upmel
+        # else:
+        self.noisec = config['model_args']['cond_in_channels']
 
     def build_dataset(self):
 
@@ -211,7 +216,10 @@ class univnet_task(GanBaseTask):
             2. calculate losses if not infer
         """
         mel=sample['mel']
-        x=torch.randn(mel.size()[0],self.noisec,mel.size()[-1]).to(mel)
+        if self.upmel is not None:
+            x=torch.randn(mel.size()[0],self.noisec,mel.size()[-1]*self.upmel).to(mel)
+        else:
+            x = torch.randn(mel.size()[0], self.noisec, mel.size()[-1]).to(mel)
         wav=self.generator(x=x,c=mel, )
         return {'audio':wav}
 

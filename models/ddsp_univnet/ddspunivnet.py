@@ -3,11 +3,49 @@ import torch
 import logging
 # from modules import LVCBlock
 import torch.nn.functional as F
+from torch import nn
 
 from modules.univ_D.block import LVCBlock
 
 LRELU_SLOPE = 0.1
 
+from modules.ddsp.vocoder import CombSub, Sins
+
+
+class DDSP(nn.Module):
+    def __init__(self,config):
+        super().__init__()
+        if config['model_args']['type']=='CombSub':
+            self.ddsp = CombSub(
+                sampling_rate=config['audio_sample_rate'],
+                block_size=config['hop_size'],
+                win_length=config['win_size'],
+                n_mag_harmonic=config['model_args']['n_mag_harmonic'],
+                n_mag_noise=config['model_args']['n_mag_noise'],
+                n_mels=config['audio_num_mel_bins'])
+        elif config['model_args']['type']=='Sins':
+            self.ddsp = Sins(
+                sampling_rate=config['audio_sample_rate'],
+                block_size=config['hop_size'],
+                win_length=config['win_size'],
+                n_harmonics=config['model_args']['n_harmonics'],
+                n_mag_noise=config['model_args']['n_mag_noise'],
+                n_mels=config['audio_num_mel_bins'])
+
+    def forward(self,mel,f0,infer=False):
+        signal, _, (s_h, s_n) = self.ddsp(mel.transpose(1,2), torch.unsqueeze(f0,dim=-1), infer=infer)
+        return signal.unsqueeze(1),s_h,s_n
+
+class downblock(nn.Module):
+    def __init__(self, down, indim, outdim):
+        super().__init__()
+        self.c = nn.Conv1d(indim, outdim * 2, kernel_size=down * 2, stride=down, padding=down // 2)
+        self.act = GLU(1)
+        self.out = nn.Conv1d(outdim, outdim, kernel_size=3, padding=1)
+        self.act1 = nn.GELU()
+
+    def forward(self, x):
+        return self.act1(self.out(self.act(self.c(x))))
 
 class GLU(torch.nn.Module):
     def __init__(self, dim):
@@ -42,12 +80,15 @@ class Upspamper(torch.nn.Module):
         spectrogram = torch.squeeze(x, 1)
         return spectrogram
 
-class UnivNet(torch.nn.Module):
+class ddspUnivNet(torch.nn.Module):
     """Parallel WaveGAN Generator module."""
 
     def __init__(self, h, use_weight_norm=True):
 
         super().__init__()
+
+        self.ddsp=DDSP(h)
+
 
         in_channels = h['model_args']['cond_in_channels']
         out_channels = h['model_args']['out_channels']
