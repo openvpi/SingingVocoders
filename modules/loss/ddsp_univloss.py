@@ -116,11 +116,15 @@ class ddsp_univloss(nn.Module):
         if step < self.deuv:
             detach_uv = True
 
-
+        #
         lossddsp, (loss_rss, loss_uv) = self.ddsploss(Goutput['ddspwav'].squeeze(1), Goutput['s_h'],
                                                 sample['audio'].squeeze(1),sample['uv'].float(),
                                                   detach_uv=detach_uv,
                                                   uv_tolerance=0.05)
+
+        # lossddsp=0
+        # loss_rss=0
+        # loss_uv=0
 
 
         sc_loss, mag_loss = self.stft.stft(Goutput['audio'].squeeze(1), sample['audio'].squeeze(1))

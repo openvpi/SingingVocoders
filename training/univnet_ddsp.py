@@ -221,9 +221,9 @@ class ddsp_univnet_task(GanBaseTask):
         """
         mel=sample['mel']
         if self.upmel is not None:
-            x=torch.randn(mel.size()[0],self.noisec,mel.size()[-1]*self.upmel).to(mel)
+            x=torch.randn(mel.size()[0],self.noisec,mel.size()[-1]*self.upmel,device=mel.device,dtype=mel.dtype).to(mel)
         else:
-            x = torch.randn(mel.size()[0], self.noisec, mel.size()[-1]).to(mel)
+            x = torch.randn(mel.size()[0], self.noisec, mel.size()[-1],device=mel.device,dtype=mel.dtype).to(mel)
         wav, ddspwav, s_h, s_n=self.generator(x=x,c=mel, f0=sample['f0'])
 
         return {'audio':wav,'ddspwav':ddspwav,'s_h':s_h,'s_n':s_n}

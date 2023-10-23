@@ -183,6 +183,7 @@ class ddspUnivNet(torch.nn.Module):
         Returns:
             Tensor: Output tensor (B, out_channels, T)
         """
+        pass
         ddspwav,s_h,s_n=self.ddsp(mel=c,f0=f0,infer=infer)
         specl=self.ddspd(ddspwav)
 

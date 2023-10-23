@@ -258,14 +258,16 @@ class CombSub(torch.nn.Module):
         else:
             x = torch.cumsum(f0 / self.sampling_rate, axis=1)
         if initial_phase is not None:
-            x += initial_phase.to(x) / 2 / np.pi    
+            x += initial_phase.to(x) / 2 / np.pi
+
         x = x - torch.round(x)
         x = x.to(f0)
-        
+
         phase_frames = 2 * np.pi * x[:, ::self.block_size, :]
-        
+
         # parameter prediction
         ctrls = self.mel2ctrl(mel_frames, phase_frames)
+
         
         src_allpass = torch.exp(1.j * np.pi * ctrls['harmonic_phase'])
         src_allpass = torch.cat((src_allpass, src_allpass[:,-1:,:]), 1)
@@ -277,12 +279,13 @@ class CombSub(torch.nn.Module):
         combtooth = combtooth.squeeze(-1) 
         
         # harmonic part filter (using dynamic-windowed LTV-FIR)
+        pass
         harmonic = frequency_filter(
                         combtooth,
                         torch.complex(src_param, torch.zeros_like(src_param)),
                         hann_window = True,
                         half_width_frames = 1.5 * self.sampling_rate / (f0_frames + 1e-3))
-               
+
         # harmonic part filter (all pass)
         harmonic_spec = torch.stft(
                             harmonic,
@@ -293,6 +296,7 @@ class CombSub(torch.nn.Module):
                             center = True,
                             return_complex = True)
         harmonic_spec = harmonic_spec * src_allpass.permute(0, 2, 1)
+
         harmonic = torch.istft(
                         harmonic_spec,
                         n_fft = self.win_length,
@@ -303,7 +307,7 @@ class CombSub(torch.nn.Module):
         
         # noise part filter (using constant-windowed LTV-FIR)
         noise = torch.rand_like(harmonic).to(noise_param) * 2 - 1
-        noise = frequency_filter(
+        noise = frequency_filter( #极高的cpu占用 原因未知--torch2.1
                         noise,
                         torch.complex(noise_param, torch.zeros_like(noise_param)),
                         hann_window = True)

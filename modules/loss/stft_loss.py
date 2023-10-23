@@ -108,8 +108,9 @@ class STFTLoss(torch.nn.Module):
 
 
 class warp_stft:
-    def __init__(self,cfg={}):
-        self.stft=MultiResolutionSTFTLoss(**cfg)
+    def __init__(self,cfg={},divce='cuda'):
+        self.stft=MultiResolutionSTFTLoss(**cfg).to(divce)
+
 
 
     def loss(self,x, y):
