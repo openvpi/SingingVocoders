@@ -165,7 +165,7 @@ def apply_window_to_impulse_response(impulse_response, # B, n_frames, 2*(n_mag-1
     if (window_size <= 0) or (window_size > ir_size):
         window_size = ir_size
     crw = cache_win.get(window_size)
-    if crw.get(window_size)is not None:
+    if crw is not None:
         window = crw
     else:
         window= nn.Parameter(torch.hann_window(window_size), requires_grad = False).to(impulse_response)
