@@ -1,0 +1,167 @@
+# preprocessing
+
+base_config:
+  - configs/base.yaml
+
+binarizer_cls: preprocessing.BaseBinarizer
+raw_data_dir: []
+binary_data_dir: null
+binarization_args:
+  num_workers: 8
+  shuffle: true
+
+DataIndexPath: data
+valid_set_name: valid
+train_set_name: train
+
+
+volume_aug: True
+volume_aug_prob: 0.5
+
+
+mel_vmin: -6. #-6.
+mel_vmax: 1.5
+
+aux_step: 400000
+lab_aux_loss: 2.5
+lab_ddsp_loss: 2
+
+audio_sample_rate: 44100
+audio_num_mel_bins: 128
+hop_size: 512            # Hop size.
+fft_size: 2048           # FFT size.
+win_size: 2048           # FFT size.
+fmin: 40
+fmax: 16000
+fmax_for_loss: null
+crop_mel_frames: 20
+test_prefixes: []
+
+pe: rmvpe
+pe_ckpt: pretrained/rmvpe/model.pt
+
+# global constants
+
+
+# neural networks
+
+detuv: 2000
+
+
+#model_cls: training.nsf_HiFigan_task.nsf_HiFigan
+model_args:
+
+  discriminator_periods: [ 3, 5, 7, 11, 17, 23, 37 ]
+  mrd_fft_sizes: [1024, 2048, 512]
+  mrd_hop_sizes: [120, 240, 50]
+  mrd_win_lengths: [600, 1200, 240]
+
+  use_weight_norm: true
+
+
+
+
+  upsample_rates: [ 8,8,4 ]
+  cond_in_channels: 128
+  out_channels: 1
+  cg_channels: 32
+  num_lvc_blocks: 4
+  lvc_kernels: 5
+  lvc_hidden_channels: 96
+  lvc_conv_size: 3
+  dropout: 0.0
+  upmel: 2
+
+
+  type: 'CombSub' #Sins
+  n_mag_harmonic: 512
+  n_mag_noise: 256
+#256, 2048, 4, 1.0
+
+
+ddsp_fftmin: 256
+ddsp_fftmax: 2048
+ddsp_nscale: 4
+ddsp_lambdauv: 1.0
+
+
+#  n_mag_harmonic: 512
+#  n_mag_noise: 256
+
+
+#  type: 'CombSub' #Sins
+#  n_mag_harmonic: 512
+#  n_mag_noise: 256
+
+#  n_harmonics: 128
+#  n_mag_noise: 256
+
+# training
+
+task_cls: training.univnet_ddsp.ddsp_univnet_task
+
+
+
+
+discriminate_optimizer_args:
+  optimizer_cls: torch.optim.AdamW
+  lr: 0.0002
+  beta1: 0.8
+  beta2: 0.99
+  weight_decay: 0
+
+generater_optimizer_args:
+  optimizer_cls: torch.optim.AdamW
+  lr: 0.0002
+  beta1: 0.8
+  beta2: 0.99
+  weight_decay: 0
+
+lr_scheduler_args:
+  scheduler_cls: lr_scheduler.scheduler.WarmupLR
+  warmup_steps: 5000
+  min_lr: 0.00001
+
+clip_grad_norm: null
+#accumulate_grad_batches: 1
+#sampler_frame_count_grid: 6
+ds_workers: 4
+dataloader_prefetch_factor: 2
+
+batch_size: 10
+
+
+
+num_valid_plots: 100
+log_interval: 100
+num_sanity_val_steps: 1  # steps of validation at the beginning
+val_check_interval: 8000
+num_ckpt_keep: 5
+max_updates: 800000
+permanent_ckpt_start: 200000
+permanent_ckpt_interval: 40000
+
+###########
+# pytorch lightning
+# Read https://lightning.ai/docs/pytorch/stable/common/trainer.html#trainer-class-api for possible values
+###########
+pl_trainer_accelerator: 'auto'
+pl_trainer_devices: 'auto'
+pl_trainer_precision: '32-true'
+#pl_trainer_precision: 'bf16'
+pl_trainer_num_nodes: 1
+pl_trainer_strategy: 'auto'
+ddp_backend: 'nccl' # choose from 'gloo', 'nccl', 'nccl_no_p2p'
+seed: 114514
+
+###########
+# finetune
+###########
+
+finetune_enabled: false
+finetune_ckpt_path: null
+finetune_ignored_params: []
+finetune_strict_shapes: true
+
+freezing_enabled: false
+frozen_params: []

@@ -5,7 +5,7 @@ import logging
 import torch.nn.functional as F
 from torch import nn
 
-from modules.univ_D.block import LVCBlock
+from modules.univ_ddsp.block import LVCBlock
 
 LRELU_SLOPE = 0.1
 
@@ -48,7 +48,7 @@ class downblock(nn.Module):
         return self.act1(self.out(self.act(self.c(x))))
 
 class ddsp_down(nn.Module):
-    def __init__(self,dims,downs:list):
+    def __init__(self,dims,downs:list,):
         super().__init__()
 
         dl=[]
@@ -130,8 +130,8 @@ class ddspUnivNet(torch.nn.Module):
         kpnet_hidden_channels =  h['model_args']['lvc_hidden_channels']
         kpnet_conv_size =  h['model_args']['lvc_conv_size']
         dropout =  h['model_args']['dropout']
-
-        self.ddspd = ddsp_down(dims=inner_channels,downs=upsample_ratios)
+        # upsample_ratios:list
+        self.ddspd = ddsp_down(dims=inner_channels,downs=upsample_ratios.copy(),)
 
         upmel=h['model_args'].get('upmel')
         self.upblocke=torch.nn.Sequential(*[Upspamper() for i in range(upmel//2)]) if upmel is not None else torch.nn.Identity()
@@ -175,7 +175,7 @@ class ddspUnivNet(torch.nn.Module):
         if use_weight_norm:
             self.apply_weight_norm()
 
-    def forward(self, x, c):
+    def forward(self, x, c,f0,infer=False):
         """Calculate forward propagation.
         Args:
             x (Tensor): Input noise signal (B, 1, T).
@@ -183,19 +183,21 @@ class ddspUnivNet(torch.nn.Module):
         Returns:
             Tensor: Output tensor (B, out_channels, T)
         """
+        ddspwav,s_h,s_n=self.ddsp(mel=c,f0=f0,infer=infer)
+        specl=self.ddspd(ddspwav)
 
         x = self.first_conv(x)
         c=self.upblocke(c)
 
         for n in range(self.lvc_block_nums):
-            x = self.lvc_blocks[n](x, c)
+            x = self.lvc_blocks[n](x, c,specl[n])
 
         # apply final layers
         for f in self.last_conv_layers:
             x = F.leaky_relu(x, LRELU_SLOPE)
             x = f(x)
         x = torch.tanh(x)
-        return x
+        return x,ddspwav,s_h,s_n
 
     def remove_weight_norm(self):
         """Remove weight normalization module from all of the layers."""
