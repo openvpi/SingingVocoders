@@ -164,13 +164,13 @@ def apply_window_to_impulse_response(impulse_response, # B, n_frames, 2*(n_mag-1
     ir_size = impulse_response.size(-1)
     if (window_size <= 0) or (window_size > ir_size):
         window_size = ir_size
-    # window = nn.Parameter(torch.hann_window(window_size), requires_grad = False).to(impulse_response)  那个nt写的
-    crw=crash_win.get(window_size)
+    crw = crash_win.get(window_size)
     if crash_win.get(window_size)is not None:
-        window=crw
+        window = crw
     else:
         window= nn.Parameter(torch.hann_window(window_size), requires_grad = False).to(impulse_response)
-        crash_win[window_size]=window
+        crash_win[window_size] = window
+        
     # Zero pad the window and put in in zero-phase form.
     padding = ir_size - window_size
     if padding > 0:
