@@ -120,7 +120,7 @@ class ddsp_univloss(nn.Module):
         lossddsp, (loss_rss, loss_uv) = self.ddsploss(Goutput['ddspwav'].squeeze(1), Goutput['s_h'],
                                                 sample['audio'].squeeze(1),sample['uv'].float(),
                                                   detach_uv=detach_uv,
-                                                  uv_tolerance=0.05)
+                                                  uv_tolerance=0.15)
 
         # lossddsp=0
         # loss_rss=0

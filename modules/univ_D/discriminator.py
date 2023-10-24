@@ -59,10 +59,14 @@ class MultiResSpecDiscriminator(torch.nn.Module):
                  window="hann_window"):
 
         super(MultiResSpecDiscriminator, self).__init__()
+        # self.discriminators = nn.ModuleList([
+        #     SpecDiscriminator(fft_sizes[0], hop_sizes[0], win_lengths[0], window),
+        #     SpecDiscriminator(fft_sizes[1], hop_sizes[1], win_lengths[1], window),
+        #     SpecDiscriminator(fft_sizes[2], hop_sizes[2], win_lengths[2], window)
+        #     ])
         self.discriminators = nn.ModuleList([
-            SpecDiscriminator(fft_sizes[0], hop_sizes[0], win_lengths[0], window),
-            SpecDiscriminator(fft_sizes[1], hop_sizes[1], win_lengths[1], window),
-            SpecDiscriminator(fft_sizes[2], hop_sizes[2], win_lengths[2], window)
+            SpecDiscriminator(i[0], i[1], i[2], window) for i in zip(fft_sizes,hop_sizes,win_lengths)
+
             ])
 
     def forward(self, y,):
