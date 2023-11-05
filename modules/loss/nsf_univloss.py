@@ -7,7 +7,7 @@ from modules.loss.stft_loss import warp_stft
 from utils.wav2mel import PitchAdjustableMelSpectrogram
 
 
-class ddsp_univloss(nn.Module):
+class nsf_univloss(nn.Module):
     def __init__(self, config: dict):
         super().__init__()
         self.mel = PitchAdjustableMelSpectrogram(sample_rate=config['audio_sample_rate'],
@@ -30,9 +30,9 @@ class ddsp_univloss(nn.Module):
 
         self.deuv = config.get('detuv', 2000)
 
-        self.ddsploss = HybridLoss(block_size=config['hop_size'], fft_min=config['ddsp_fftmin'],
-                                   fft_max=config['ddsp_fftmax'], n_scale=config['ddsp_nscale'],
-                                   lambda_uv=config['ddsp_lambdauv'], device='cuda')
+        # self.ddsploss = HybridLoss(block_size=config['hop_size'], fft_min=config['ddsp_fftmin'],
+        #                            fft_max=config['ddsp_fftmax'], n_scale=config['ddsp_nscale'],
+        #                            lambda_uv=config['ddsp_lambdauv'], device='cuda')
         # fft_sizes = [2048, 4096, 1024, 512, 256, 128],
         # hop_sizes = [240, 480, 100, 50, 25, 12],
         # win_lengths = [1200, 2400, 480, 240, 120, 60]
@@ -96,7 +96,7 @@ class ddsp_univloss(nn.Module):
         mpd_featrue_loss = self.feature_loss(Tmpd_featrue, Fmpd_featrue)
         # loss +=msd_featrue_loss
         # loss +=mpd_featrue_loss
-        loss = mrd_featrue_loss + mpd_featrue_loss + mpd_losses + mrd_losses
+        loss =  mpd_featrue_loss + mpd_losses + mrd_losses#+mrd_featrue_loss
         # (msd_losses, mpd_losses), (msd_featrue_loss, mpd_featrue_loss), gen_losses
         return loss, {'Gmrdloss': mrd_losses, 'Gmpdloss': mpd_losses, 'Gmrd_featrue_loss': mrd_featrue_loss,
                       'Dmpd_featrue_loss': mpd_featrue_loss}
@@ -119,10 +119,10 @@ class ddsp_univloss(nn.Module):
             detach_uv = True
 
         #
-        lossddsp, (loss_rss, loss_uv) = self.ddsploss(Goutput['ddspwav'].squeeze(1), Goutput['s_h'],
-                                                sample['audio'].squeeze(1),sample['uv'].float(),
-                                                  detach_uv=detach_uv,
-                                                  uv_tolerance=0.15)
+        # lossddsp, (loss_rss, loss_uv) = self.ddsploss(Goutput['ddspwav'].squeeze(1), Goutput['s_h'],
+        #                                         sample['audio'].squeeze(1),sample['uv'].float(),
+        #                                           detach_uv=detach_uv,
+        #                                           uv_tolerance=0.15)
 
         # lossddsp=0
         # loss_rss=0
@@ -130,5 +130,5 @@ class ddsp_univloss(nn.Module):
 
 
         sc_loss, mag_loss = self.stft.stft(Goutput['audio'].squeeze(1), sample['audio'].squeeze(1))
-        loss = (sc_loss + mag_loss) * self.labauxloss +lossddsp*self.labddsploss
-        return loss, {'auxloss': loss, 'auxloss_sc_loss': sc_loss, 'auxloss_mag_loss': mag_loss,'ddsploss':lossddsp,'ddsp_loss_rss':loss_rss,'ddsp_lossuv':loss_uv}
+        loss = (sc_loss + mag_loss) * self.labauxloss
+        return loss, {'auxloss': loss, 'auxloss_sc_loss': sc_loss, 'auxloss_mag_loss': mag_loss,}

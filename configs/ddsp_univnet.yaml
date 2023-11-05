@@ -46,7 +46,9 @@ pe_ckpt: pretrained/rmvpe/model.pt
 # neural networks
 
 detuv: 2000
-
+loss_fft_sizes: [2048, 2048, 4096, 1024, 512, 256, 128]
+loss_hop_sizes: [512, 240, 480, 100, 50, 25, 12]
+loss_win_lengths: [2048, 1200, 2400, 480, 240, 120, 60]
 
 #model_cls: training.nsf_HiFigan_task.nsf_HiFigan
 model_args:

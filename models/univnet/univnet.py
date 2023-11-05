@@ -61,7 +61,7 @@ class UnivNet(torch.nn.Module):
         dropout =  h['model_args']['dropout']
 
         upmel=h['model_args'].get('upmel')
-        self.upblocke=torch.nn.Sequential(*[Upspamper() for i in range(upmel//2)]) if upmel is not None else torch.nn.Identity()
+        self.upblocke=torch.nn.Sequential(*[Upspamper() for i in range(upmel//2)]) if upmel is not None or upmel==1 else torch.nn.Identity()
 
         self.in_channels = in_channels
         self.out_channels = out_channels

@@ -24,10 +24,7 @@ mel_vmax: 1.5
 
 aux_step: 400000
 lab_aux_loss: 2.5
-
-loss_fft_sizes: [2048, 2048, 4096, 1024, 512, 256, 128]
-loss_hop_sizes: [512, 240, 480, 100, 50, 25, 12]
-loss_win_lengths: [2048, 1200, 2400, 480, 240, 120, 60]
+lab_ddsp_loss: 2
 
 audio_sample_rate: 44100
 audio_num_mel_bins: 128
@@ -48,6 +45,10 @@ pe_ckpt: pretrained/rmvpe/model.pt
 
 # neural networks
 
+detuv: 2000
+loss_fft_sizes: [2048, 2048, 4096, 1024, 512, 256, 128]
+loss_hop_sizes: [512, 240, 480, 100, 50, 25, 12]
+loss_win_lengths: [2048, 1200, 2400, 480, 240, 120, 60]
 
 #model_cls: training.nsf_HiFigan_task.nsf_HiFigan
 model_args:
@@ -74,6 +75,18 @@ model_args:
   upmel: 2
 
 
+  type: 'CombSub' #Sins
+  n_mag_harmonic: 512
+  n_mag_noise: 256
+#256, 2048, 4, 1.0
+
+
+ddsp_fftmin: 256
+ddsp_fftmax: 2048
+ddsp_nscale: 4
+ddsp_lambdauv: 1.0
+
+
 #  n_mag_harmonic: 512
 #  n_mag_noise: 256
 
@@ -87,7 +100,7 @@ model_args:
 
 # training
 
-task_cls: training.univnet.univnet_task
+task_cls: training.univnet_nsf.nsf_univnet_task
 
 
 

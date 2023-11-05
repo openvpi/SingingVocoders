@@ -20,8 +20,8 @@ class univloss(nn.Module):
         self.labauxloss=config.get('lab_aux_loss',45)
         # self.stft=warp_stft({'fft_sizes':[1024, 2048, 512,],'hop_sizes':[120, 240, 50,],'win_lengths':[600, 1200, 240,]})
 
-        self.stft = warp_stft({'fft_sizes': [2048, 2048, 4096, 1024, 512, 256, 128], 'hop_sizes': [512, 240, 480, 100, 50, 25, 12],
-                           'win_lengths': [2048, 1200, 2400, 480, 240, 120, 60]})
+        self.stft = warp_stft({'fft_sizes': config['loss_fft_sizes'], 'hop_sizes': config['loss_hop_sizes'],
+                           'win_lengths': config['loss_win_lengths']})
         # fft_sizes = [2048, 4096, 1024, 512, 256, 128],
         # hop_sizes = [240, 480, 100, 50, 25, 12],
         # win_lengths = [1200, 2400, 480, 240, 120, 60]
