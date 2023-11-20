@@ -25,6 +25,9 @@ train_set_name: trainX 这个是训练的 index的名字
 
 val_num: 1 这个是你要的 val 数量 
 
+# 导出
+[export_ckpt.py](export_ckpt.py)export_ckpt.py --exp_name ckpt名字  --save_path 导出的ckpt --work_dir 工作目录（可选） 
+
 
 
 
