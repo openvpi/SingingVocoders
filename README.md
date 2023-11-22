@@ -2,6 +2,7 @@
 A collection of neural vocoders suitable for singing voice synthesis tasks.
 
 # English version [README_en.md](README_en.md)
+## If you have any questions, please open an issue.
 # 训练
 
 [train.py](train.py) --config 配置文件 --exp_name ckpt名字 --work_dir 工作目录（可选）
