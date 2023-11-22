@@ -73,12 +73,12 @@ val_num: 1 这个是在验证的时候 抽取的音频文件数量
 process.py --config (your config path) --num_cpu (Number of cpu threads used in preprocessing)  --strx (1 for a forced absolute path 0 for a relative path)
 
 ```
-##训练
+## 训练
 ```angular2html
 train.py --config (your config path) --exp_name (your ckpt name) --work_dir Working catalogue (optional)
 
 ```
-##导出
+## 导出
 ```angular2html
 export_ckpt.py --exp_name (your ckpt name)  --save_path (output ckpt path) --work_dir Working catalogue (optional)
 ```
