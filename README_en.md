@@ -4,13 +4,13 @@ A collection of neural vocoders suitable for singing voice synthesis tasks.
 # Quick Start
 
 ## processing
-Frist ,you need to use [process.py](process.py) to preprocess your date
+Frist ,you need to use [process.py](process.py) to preprocess your data
 
 The following configuration items are what you need to change during preprocessing
 
 ```angular2html
 
-data_input_path: []  the path for your date
+data_input_path: []  the path for your data
 
 data_out_path: [] the path for preprocess out put
 
@@ -18,9 +18,9 @@ val_num: 1 the number of validation audio
 ```
 examples
 ```
-data_input_path: [’wav/in1‘,’wav/in2‘] 
+data_input_path: ['wav/in1','wav/in2'] 
 
-data_out_path: [’wav/out1‘,’wav/out2‘]
+data_out_path: ['wav/out1','wav/out2']
 val_num: 5 # This is the number of valves you want. 
 
  # (The files are automatically extracted during preprocessing.)
