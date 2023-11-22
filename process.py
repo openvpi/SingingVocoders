@@ -72,7 +72,7 @@ def run_worch(path_list,num_cpu,Q:Queue,config):
         time.sleep(0.1)
 
 
-@click.command(help='Train a SOME model')
+@click.command(help='')
 @click.option('--config', required=True, metavar='FILE', help='Path to the configuration file')
 @click.option('--num_cpu', required=False, metavar='DIR2', help='Directory to save the experiment')
 @click.option('--strx', required=False, metavar='DIR4', help='Directory to save the experiment') #1 代表开   0代表关

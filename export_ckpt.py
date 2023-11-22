@@ -9,7 +9,7 @@ from utils import get_latest_checkpoint_path
 from utils.config_utils import read_full_config
 
 
-@click.command(help='Train a SOME model')
+@click.command(help='')
 @click.option('--exp_name', required=True, metavar='EXP', help='Name of the experiment')
 @click.option('--save_path', required=True, metavar='EXP', help='Name of the experiment')
 @click.option('--work_dir', required=False, metavar='DIR', help='Directory to save the experiment')

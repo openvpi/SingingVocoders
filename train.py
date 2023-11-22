@@ -24,7 +24,7 @@ logging.basicConfig(stream=sys.stdout, level=logging.INFO,
                     format=log_format, datefmt='%m/%d %I:%M:%S %p')
 
 
-@click.command(help='Train a SOME model')
+@click.command(help='')
 @click.option('--config', required=True, metavar='FILE', help='Path to the configuration file')
 @click.option('--exp_name', required=True, metavar='EXP', help='Name of the experiment')
 @click.option('--work_dir', required=False, metavar='DIR', help='Directory to save the experiment')
