@@ -27,7 +27,7 @@ win_size: 2048           # FFT size.
 fmin: 40
 fmax: 16000
 fmax_for_loss: null
-crop_mel_frames: 5
+crop_mel_frames: 32
 test_prefixes: []
 
 pe: rmvpe
