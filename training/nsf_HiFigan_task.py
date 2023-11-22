@@ -68,7 +68,7 @@ class nsf_HiFigan_dataset(Dataset):
         for record in minibatch:
 
             # Filter out records that aren't long enough.
-            if len(record['spectrogram']) < crop_mel_frames:
+            if len(record['spectrogram']) <= crop_mel_frames:
                 del record['spectrogram']
                 del record['audio']
                 del record['f0']
@@ -99,6 +99,12 @@ class nsf_HiFigan_dataset(Dataset):
 
         if self.volume_aug:
             for record in minibatch:
+                if record.get('audio') is None:
+                    # del record['spectrogram']
+                    # del record['audio']
+                    # del record['pemel']
+                    # del record['uv']
+                    continue
 
                 if random.random() < self.volume_aug_prob:
                     audio = record['audio']
