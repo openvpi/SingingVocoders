@@ -3,7 +3,7 @@ base_config:
   - configs/base.yaml
 
 
-binarizer_cls: preprocessing.BaseBinarizer
+
 raw_data_dir: []
 binary_data_dir: null
 binarization_args:
@@ -32,10 +32,7 @@ fmin: 40
 fmax: 16000
 fmax_for_loss: null
 crop_mel_frames: 20
-test_prefixes: []
 
-pe: rmvpe
-pe_ckpt: pretrained/rmvpe/model.pt
 
 # global constants
 
