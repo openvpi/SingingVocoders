@@ -4,7 +4,7 @@ A collection of neural vocoders suitable for singing voice synthesis tasks.
 # Quick Start
 
 ## processing
-Frist ,you need to use [process.py](process.py) to preprocess your data
+
 
 The following configuration items are what you need to change during preprocessing
 
