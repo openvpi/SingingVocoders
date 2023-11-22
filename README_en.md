@@ -53,19 +53,19 @@ if you finish training you can use this scripts to export diffsinger vocode chec
 
 
 
-# 注意
+# note
 
-因为pl的问题所以说再gan里面实际的步数是 他显示的 //2
+Because of some problems the actual number of steps is what he shows //2
 
-如果你需要 微调社区vocode建议使用[ft_hifigan.yaml](configs%2Fft_hifigan.yaml) 配置文件
+If you need to fine-tune the community vocode suggests using the[ft_hifigan.yaml](configs%2Fft_hifigan.yaml) 
 
-如何使用 微调功能 建议参考 ds文档
+How to use the fine-tuning function Suggested reference ds documentation
 
-少量步数的微调可以 冻结mpd
+A small number of steps of fine tuning can freeze the mpd.
 
-建议不要用 bf16 可能会产生音质问题
+It is not recommended to use bf16, as it may cause sound quality problems.
 
-差不多2k step就可以微调完成
+Almost 2k steps is enough for fine tuning.
 
 
 
