@@ -362,9 +362,9 @@ def get_strategy(accelerator, devices, num_nodes, strategy, backend):
 
     def get_ddp_strategy(_backend):
         if _backend == 'gloo':
-            return DDPStrategy(process_group_backend='gloo', find_unused_parameters=False)
+            return DDPStrategy(process_group_backend='gloo', find_unused_parameters=True)
         elif _backend == 'nccl' or _backend == 'nccl_no_p2p':
-            return DDPStrategy(process_group_backend='nccl', find_unused_parameters=False)
+            return DDPStrategy(process_group_backend='nccl', find_unused_parameters=True)
         else:
             raise ValueError(f'backend {_backend} is not valid.')
 
