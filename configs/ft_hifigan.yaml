@@ -49,8 +49,7 @@ model_args:
   resblock: "1"
 
 # training
-use_midi_loss: true
-use_bound_loss: true
+
 task_cls: training.nsf_HiFigan_task.nsf_HiFigan
 
 
