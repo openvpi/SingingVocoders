@@ -10,7 +10,7 @@ import torch.utils.data
 import yaml
 from lightning.pytorch.loggers import TensorBoardLogger
 
-import training.base_task
+
 from utils.config_utils import read_full_config, print_config
 from utils.training_utils import (
     DsModelCheckpoint, DsTQDMProgressBar,
