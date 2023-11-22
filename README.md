@@ -68,6 +68,32 @@ data_out_path: [] 此列表 预处理输出的npz文件的路径
 
 val_num: 1 这个是在验证的时候 抽取的音频文件数量
 ```
+运行预处理
+```angular2html
+process.py --config (your config path) --num_cpu (Number of cpu threads used in preprocessing)  --strx (1 for a forced absolute path 0 for a relative path)
+
+```
+##训练
+```angular2html
+train.py --config (your config path) --exp_name (your ckpt name) --work_dir Working catalogue (optional)
+
+```
+##导出
+```angular2html
+export_ckpt.py --exp_name (your ckpt name)  --save_path (output ckpt path) --work_dir Working catalogue (optional)
+```
+# 注意事项
+实际步数是显示的//2
+
+微调请使用[ft_hifigan.yaml](configs%2Fft_hifigan.yaml)
+
+微调功能使用 请参考diffsinger 文档
+
+不要使用bf16训练模型 他可能导致音质问题
+
+2k step左右即可微调完成
+
+冻结mpd可能可以有更好的结果
 
 
 

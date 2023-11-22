@@ -35,20 +35,20 @@ val_num: 5 # This is the number of valves you want.
 
 and running preprocessing scripts
 ```angular2html
-[process.py](process.py) --config (your config path) --num_cpu (Number of cpu threads used in preprocessing)  --strx (1 for a forced absolute path 0 for a relative path)
+process.py --config (your config path) --num_cpu (Number of cpu threads used in preprocessing)  --strx (1 for a forced absolute path 0 for a relative path)
 
 ```
 
 ## training
 running training scripts
 ```angular2html
-[train.py](train.py) --config (your config path) --exp_name (your ckpt name) --work_dir Working catalogue (optional)
+train.py --config (your config path) --exp_name (your ckpt name) --work_dir Working catalogue (optional)
 
 ```
 ## export checkpoint
 if you finish training you can use this scripts to export diffsinger vocode checkpoint
 ```
-[export_ckpt.py](export_ckpt.py)export_ckpt.py --exp_name (your ckpt name)  --save_path (output ckpt path) --work_dir Working catalogue (optional)
+export_ckpt.py --exp_name (your ckpt name)  --save_path (output ckpt path) --work_dir Working catalogue (optional)
 ```
 
 
