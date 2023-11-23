@@ -63,7 +63,7 @@ def wav2spec(warp):
             mel = dynamic_range_compression_torch(mel_spec_transform(audiox))
             f0, uv = get_pitch_parselmouth(audiox.numpy()[0], hparams=config,
                                            interp_uv=True, length=len(mel[0].T))
-            np.savez(pathslist[2][:-4]+f'_{str(i)}.npz', audio=audiox[0].numpy(), mel=mel[0].T, f0=f0, uv=uv)
+            np.savez(str(pathslist[2])[:-4]+f'_{str(i)}.npz', audio=audiox[0].numpy(), mel=mel[0].T, f0=f0, uv=uv)
             while True:
                 if not Q.full():
                     Q.put(str(pathslist[2][:-4]+f'_{str(i)}.npz'))
