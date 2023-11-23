@@ -3,7 +3,8 @@ base_config:
   - configs/base.yaml
 
 
-lab_aux_loss: 45
+#lab_aux_loss: 45
+lab_aux_loss: 4.5
 raw_data_dir: []
 binary_data_dir: null
 binarization_args:
@@ -22,9 +23,10 @@ volume_aug_prob: 0.5
 mel_vmin: -6. #-6.
 mel_vmax: 1.5
 
-
+aux_step: 16000
 audio_sample_rate: 44100
 audio_num_mel_bins: 128
+#audio_num_mel_bins: 192
 hop_size: 512            # Hop size.
 fft_size: 2048           # FFT size.
 win_size: 2048           # FFT size.
@@ -39,7 +41,12 @@ crop_mel_frames: 20
 
 # neural networks
 
-
+loss_fft_sizes: [2048, 2048, 4096, 1024, 512, 256, 128,1024, 2048, 512]
+loss_hop_sizes: [512, 240, 480, 100, 50, 25, 12,120, 240, 50]
+loss_win_lengths: [2048, 1200, 2400, 480, 240, 120, 60,600, 1200, 240]
+#                 fft_sizes=[1024, 2048, 512],
+#                 hop_sizes=[120, 240, 50],
+#                 win_lengths=[600, 1200, 240],
 #model_cls: training.nsf_HiFigan_task.nsf_HiFigan
 model_args:
   upsample_rates: [ 8, 8, 2, 2, 2 ]
@@ -83,14 +90,14 @@ clip_grad_norm: null
 ds_workers: 4
 dataloader_prefetch_factor: 2
 
-batch_size: 3
+batch_size: 12
 
 
 
 num_valid_plots: 100
 log_interval: 100
 num_sanity_val_steps: 1  # steps of validation at the beginning
-val_check_interval: 1000
+val_check_interval: 4000
 num_ckpt_keep: 5
 max_updates: 100000
 permanent_ckpt_start: 200000
@@ -102,8 +109,8 @@ permanent_ckpt_interval: 40000
 ###########
 pl_trainer_accelerator: 'auto'
 pl_trainer_devices: 'auto'
-pl_trainer_precision: '32-true'
-#pl_trainer_precision: 'bf16'
+#pl_trainer_precision: '32-true'
+pl_trainer_precision: 'bf16'
 pl_trainer_num_nodes: 1
 pl_trainer_strategy: 'auto'
 ddp_backend: 'nccl' # choose from 'gloo', 'nccl', 'nccl_no_p2p'

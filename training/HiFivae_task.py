@@ -178,10 +178,7 @@ class stftlog:
         ).abs()
         return spec
 
-def kl_loss(logs, m):
-  kl = 0.5 * (m**2 + torch.exp(logs) - logs - 1).sum(dim=1)
-  kl = torch.mean(kl)
-  return kl
+
 class HiFivae_task(GanBaseTask):
     def __init__(self, config):
         super().__init__(config)
@@ -224,52 +221,51 @@ class HiFivae_task(GanBaseTask):
         mpd_out,mpd_featrue=self.discriminator['mpd'](Goutput)
         return (msd_out,msd_featrue),(mpd_out,mpd_featrue)
 
-    def _training_step(self, sample, batch_idx):
-        """
-        :return: total loss: torch.Tensor, loss_log: dict, other_log: dict
-
-        """
-
-        log_diet = {}
-        opt_g, opt_d = self.optimizers()
-        # foeward generator start
-        Goutpt = self.Gforward(sample=sample)  #y_g_hat =Goutpt
-        # foeward generator start
-
-        #foeward discriminator start
-
-        Dfake = self.Dforward(Goutput=Goutpt['audio'].detach()) #y_g_hat =Goutpt
-        Dtrue = self.Dforward(Goutput=sample['audio']) #y =sample['audio']
-        Dloss, Dlog = self.mix_loss.Dloss(Dfake=Dfake, Dtrue=Dtrue)
-        log_diet.update(Dlog)
-        # foeward discriminator end
-        #opt discriminator start
-        opt_d.zero_grad()  #clean discriminator grad
-        self.manual_backward(Dloss)
-        opt_d.step()
-        # opt discriminator end
-        # opt generator start
-        GDfake = self.Dforward(Goutput=Goutpt['audio'])
-        GDtrue=self.Dforward(Goutput=sample['audio'])
-        GDloss, GDlog = self.mix_loss.GDloss(GDfake=GDfake,GDtrue=GDtrue)
-        log_diet.update(GDlog)
-        Auxloss, Auxlog = self.mix_loss.Auxloss(Goutput=Goutpt, sample=sample)
-        klloss=kl_loss(logs=Goutpt['lossxxs'][2],m=Goutpt['lossxxs'][1])
-        wavloss= F.l1_loss(Goutpt['audio'], sample['audio'])
-        log_diet.update(Auxlog)
-        log_diet.update({'klloss':klloss,'wavloss':wavloss})
-        Dlosss=GDloss + Auxloss+klloss*0.02+wavloss*5
-
-        opt_g.zero_grad() #clean generator grad
-        self.manual_backward(Dlosss)
-        opt_g.step()
-        # opt generator end
-        return log_diet
+    # def _training_step(self, sample, batch_idx):
+    #     """
+    #     :return: total loss: torch.Tensor, loss_log: dict, other_log: dict
+    #
+    #     """
+    #
+    #     log_diet = {}
+    #     opt_g, opt_d = self.optimizers()
+    #     # foeward generator start
+    #     Goutpt = self.Gforward(sample=sample)  #y_g_hat =Goutpt
+    #     # foeward generator start
+    #
+    #     #foeward discriminator start
+    #
+    #     Dfake = self.Dforward(Goutput=Goutpt['audio'].detach()) #y_g_hat =Goutpt
+    #     Dtrue = self.Dforward(Goutput=sample['audio']) #y =sample['audio']
+    #     Dloss, Dlog = self.mix_loss.Dloss(Dfake=Dfake, Dtrue=Dtrue)
+    #     log_diet.update(Dlog)
+    #     # foeward discriminator end
+    #     #opt discriminator start
+    #     opt_d.zero_grad()  #clean discriminator grad
+    #     self.manual_backward(Dloss)
+    #     opt_d.step()
+    #     # opt discriminator end
+    #     # opt generator start
+    #     GDfake = self.Dforward(Goutput=Goutpt['audio'])
+    #     GDtrue=self.Dforward(Goutput=sample['audio'])
+    #     GDloss, GDlog = self.mix_loss.GDloss(GDfake=GDfake,GDtrue=GDtrue)
+    #     log_diet.update(GDlog)
+    #     Auxloss, Auxlog = self.mix_loss.Auxloss(Goutput=Goutpt, sample=sample)
+    #
+    #     log_diet.update(Auxlog)
+    #     # log_diet.update({'klloss':klloss,'wavloss':wavloss})
+    #     Dlosss=GDloss + Auxloss
+    #
+    #     opt_g.zero_grad() #clean generator grad
+    #     self.manual_backward(Dlosss)
+    #     opt_g.step()
+    #     # opt generator end
+    #     return log_diet
 
     def _validation_step(self, sample, batch_idx):
 
-        wav=self.Gforward(sample)['audio']
-
+        gop=self.Gforward(sample)
+        wav=gop['audio']
         with torch.no_grad():
 
             # self.TF = self.TF.cpu()
@@ -293,8 +289,8 @@ class HiFivae_task(GanBaseTask):
                                                  sample_rate=self.config['audio_sample_rate'],
                                                  global_step=self.global_step)
                 self.logged_gt_wav.add(batch_idx)
-
-        return {'l1loss':nn.L1Loss()(wav, sample['audio'])}, 1
+        Auxloss, Auxlog = self.mix_loss.Auxloss(Goutput=gop, sample=sample)
+        return Auxlog, 1
 
     def plot_mel(self, batch_idx, spec, spec_out, name=None):
         name = f'mel_{batch_idx}' if name is None else name
