@@ -66,7 +66,7 @@ def wav2spec(warp):
             np.savez(str(pathslist[2])[:-4]+f'_{str(i)}.npz', audio=audiox[0].numpy(), mel=mel[0].T, f0=f0, uv=uv)
             while True:
                 if not Q.full():
-                    Q.put(str(pathslist[2][:-4]+f'_{str(i)}.npz'))
+                    Q.put(str(str(pathslist[2])[:-4]+f'_{str(i)}.npz'))
                     break
 
 
