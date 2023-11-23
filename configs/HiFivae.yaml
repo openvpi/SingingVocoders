@@ -3,7 +3,7 @@ base_config:
   - configs/base.yaml
 
 
-
+lab_aux_loss: 45
 raw_data_dir: []
 binary_data_dir: null
 binarization_args:

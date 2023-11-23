@@ -217,7 +217,7 @@ class HiFivae(torch.nn.Module):
     def forward(self, x):
         z, m, logs = self.Encoder(x)
         x = self.Generator(z)
-        return x
+        return x,z, m, logs
 
 
 class DiscriminatorP(torch.nn.Module):

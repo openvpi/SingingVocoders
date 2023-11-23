@@ -15,11 +15,11 @@ from torch import nn
 
 from torch.utils.data import Dataset
 from torchmetrics import Metric, MeanMetric
-
+import torch.nn.functional as F
 import utils
 from models.HiFivae.models import HiFivae
 from models.nsf_HiFigan.models import Generator, AttrDict, MultiScaleDiscriminator, MultiPeriodDiscriminator
-from modules.loss.HiFiloss import HiFiloss
+from modules.loss.vaeHiFiloss import HiFiloss
 from training.base_task_gan import GanBaseTask
 from utils.indexed_datasets import IndexedDataset
 from utils.training_utils import (
@@ -178,6 +178,10 @@ class stftlog:
         ).abs()
         return spec
 
+def kl_loss(logs, m):
+  kl = 0.5 * (m**2 + torch.exp(logs) - logs - 1).sum(dim=1)
+  kl = torch.mean(kl)
+  return kl
 class HiFivae_task(GanBaseTask):
     def __init__(self, config):
         super().__init__(config)
@@ -212,8 +216,8 @@ class HiFivae_task(GanBaseTask):
             1. run the full model
             2. calculate losses if not infer
         """
-        wav=self.generator(x=sample['audio'],)
-        return {'audio':wav}
+        wav,z, m, logs=self.generator(x=sample['audio'],)
+        return {'audio':wav,'lossxxs':[z, m, logs]}
 
     def Dforward(self, Goutput):
         msd_out,msd_featrue=self.discriminator['msd'](Goutput)
@@ -250,9 +254,11 @@ class HiFivae_task(GanBaseTask):
         GDloss, GDlog = self.mix_loss.GDloss(GDfake=GDfake,GDtrue=GDtrue)
         log_diet.update(GDlog)
         Auxloss, Auxlog = self.mix_loss.Auxloss(Goutput=Goutpt, sample=sample)
-
+        klloss=kl_loss(logs=Goutpt['lossxxs'][2],m=Goutpt['lossxxs'][1])
+        wavloss= F.l1_loss(Goutpt['audio'], sample['audio'])
         log_diet.update(Auxlog)
-        Dlosss=GDloss + Auxloss
+        log_diet.update({'klloss':klloss,'wavloss':wavloss})
+        Dlosss=GDloss + Auxloss+klloss*0.02+wavloss*5
 
         opt_g.zero_grad() #clean generator grad
         self.manual_backward(Dlosss)
