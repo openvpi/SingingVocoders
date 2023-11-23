@@ -3,6 +3,13 @@ A collection of neural vocoders suitable for singing voice synthesis tasks.
 
 # English version [README_en.md](README_en.md)
 ## If you have any questions, please open an issue.
+# 数据增强
+将预处理脚本替换为[process_aug.py](process_aug.py) 并增添配置项
+aug_min: 0.9
+aug_max: 2
+aug_num: 1
+即可
+
 # 训练
 
 [train.py](train.py) --config 配置文件 --exp_name ckpt名字 --work_dir 工作目录（可选）
