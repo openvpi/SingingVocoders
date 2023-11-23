@@ -1,5 +1,6 @@
 import multiprocessing
 import pathlib
+import random
 import time
 from concurrent.futures import ProcessPoolExecutor
 from threading import Thread
@@ -20,6 +21,10 @@ from utils.wav2mel import PitchAdjustableMelSpectrogram
 def dynamic_range_compression_torch(x, C=1, clip_val=1e-5):
     return torch.log(torch.clamp(x, min=clip_val) * C)
 
+def wav_aug(wav,n=1,sr=44100):
+    nsr=int((1/n)*sr)
+    return torchaudio.transforms.Resample(orig_freq=sr, new_freq=nsr)(wav)
+
 
 def wav2spec(warp):
     torch.set_num_threads(1)
@@ -38,6 +43,7 @@ def wav2spec(warp):
         if sr != config['audio_sample_rate']:
             print('error:', str(pathslist[0]))
             return None
+
         mel = dynamic_range_compression_torch(mel_spec_transform(audio))
         f0, uv = get_pitch_parselmouth(audio.numpy()[0], hparams=config,
                                        interp_uv=True, length=len(mel[0].T))
@@ -52,6 +58,17 @@ def wav2spec(warp):
             if not Q.full():
                 Q.put(str(pathslist[2]))
                 break
+        for i  in range(config['aug_num']):
+            audiox=wav_aug(audio,random.uniform(config['aug_min'],config['aug_max']),sr=config['audio_sample_rate'])
+            mel = dynamic_range_compression_torch(mel_spec_transform(audiox))
+            f0, uv = get_pitch_parselmouth(audiox.numpy()[0], hparams=config,
+                                           interp_uv=True, length=len(mel[0].T))
+            np.savez(pathslist[2][:-4]+f'_{str(i)}.npz', audio=audiox[0].numpy(), mel=mel[0].T, f0=f0, uv=uv)
+            while True:
+                if not Q.full():
+                    Q.put(str(pathslist[2][:-4]+f'_{str(i)}.npz'))
+                    break
+
 
     except:
         print('error:', str(pathslist[0]))

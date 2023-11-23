@@ -93,7 +93,7 @@ batch_size: 6
 num_valid_plots: 100
 log_interval: 100
 num_sanity_val_steps: 5  # steps of validation at the beginning
-val_check_interval: 4000
+val_check_interval: 2000
 num_ckpt_keep: 5
 max_updates: 100000
 permanent_ckpt_start: 200000
