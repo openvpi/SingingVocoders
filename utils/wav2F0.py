@@ -52,8 +52,8 @@ def get_pitch_parselmouth(wav_data, length, hparams, speed=1, interp_uv=False):
     """
     hop_size = int(np.round(hparams['hop_size'] * speed))
     time_step = hop_size / hparams['audio_sample_rate']
-    f0_min = 65
-    f0_max = 800
+    f0_min = hparams['f0_min']
+    f0_max = hparams['f0_max']
 
     l_pad = int(np.ceil(1.5 / f0_min * hparams['audio_sample_rate']))
     r_pad = hop_size * ((len(wav_data) - 1) // hop_size + 1) - len(wav_data) + l_pad + 1
