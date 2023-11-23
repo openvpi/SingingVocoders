@@ -56,7 +56,7 @@ Replace the preprocessing script with [process_aug.py](process_aug.py) and add c
 ```
 aug_min: 0.9  Minimum Transpose Multiplier
 aug_max: 1.4   Maximum Variable Adjustment Multiplier
-aug_num: 5   Data Enhancement Multiplier
+aug_num: 1   Data Enhancement Multiplier
 ```
 That's it.
 
