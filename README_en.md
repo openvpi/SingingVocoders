@@ -51,7 +51,14 @@ if you finish training you can use this scripts to export diffsinger vocode chec
 export_ckpt.py --exp_name (your ckpt name)  --save_path (output ckpt path) --work_dir Working catalogue (optional)
 ```
 
-
+# Data enhancement
+Replace the preprocessing script with [process_aug.py](process_aug.py) and add configuration entries
+```
+aug_min: 0.9
+aug_max: 2
+aug_num: 1
+```
+That's it.
 
 # note
 

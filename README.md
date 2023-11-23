@@ -5,9 +5,11 @@ A collection of neural vocoders suitable for singing voice synthesis tasks.
 ## If you have any questions, please open an issue.
 # 数据增强
 将预处理脚本替换为[process_aug.py](process_aug.py) 并增添配置项
+```
 aug_min: 0.9
 aug_max: 2
 aug_num: 1
+```
 即可
 
 # 训练
