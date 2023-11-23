@@ -7,7 +7,7 @@ A collection of neural vocoders suitable for singing voice synthesis tasks.
 将预处理脚本替换为[process_aug.py](process_aug.py) 并增添配置项
 ```
 aug_min: 0.9 最小变调倍数
-aug_max: 2 最大变调倍数
+aug_max: 1.4 最大变调倍数
 aug_num: 1 数据增强倍数
 ```
 即可
