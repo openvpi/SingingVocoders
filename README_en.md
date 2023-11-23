@@ -54,9 +54,9 @@ export_ckpt.py --exp_name (your ckpt name)  --save_path (output ckpt path) --wor
 # Data enhancement
 Replace the preprocessing script with [process_aug.py](process_aug.py) and add configuration entries
 ```
-aug_min: 0.9
-aug_max: 2
-aug_num: 1
+aug_min: 0.9  Minimum Transpose Multiplier
+aug_max: 2   Maximum Variable Adjustment Multiplier
+aug_num: 1   Data Enhancement Multiplier
 ```
 That's it.
 

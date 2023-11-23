@@ -58,7 +58,7 @@ def wav2spec(warp):
             if not Q.full():
                 Q.put(str(pathslist[2]))
                 break
-        for i  in range(config['aug_num']):
+        for i  in range(int(config['aug_num'])):
             audiox=wav_aug(audio,random.uniform(config['aug_min'],config['aug_max']),sr=config['audio_sample_rate'])
             mel = dynamic_range_compression_torch(mel_spec_transform(audiox))
             f0, uv = get_pitch_parselmouth(audiox.numpy()[0], hparams=config,
