@@ -21,9 +21,10 @@ from utils.wav2mel import PitchAdjustableMelSpectrogram
 def dynamic_range_compression_torch(x, C=1, clip_val=1e-5):
     return torch.log(torch.clamp(x, min=clip_val) * C)
 
-def wav_aug(wav,n=1,sr=44100):
-    nsr=int((1/n)*sr)
-    return torchaudio.transforms.Resample(orig_freq=sr, new_freq=nsr)(wav)
+def wav_aug(wav, hop_size, speed=1):
+    orig_freq = int(np.round(hop_size * speed))
+    new_freq = hop_size
+    return torchaudio.transforms.Resample(orig_freq=orig_freq, new_freq=new_freq)(wav)
 
 
 def wav2spec(warp):
@@ -58,11 +59,13 @@ def wav2spec(warp):
             if not Q.full():
                 Q.put(str(pathslist[2]))
                 break
-        for i  in range(int(config['aug_num'])):
-            audiox=wav_aug(audio,random.uniform(config['aug_min'],config['aug_max']),sr=config['audio_sample_rate'])
+        for i in range(int(config['aug_num'])):
+            speed = random.uniform(config['aug_min'],config['aug_max'])
+            audiox = wav_aug(audio, config["hop_size"], speed=speed)
             mel = dynamic_range_compression_torch(mel_spec_transform(audiox))
-            f0, uv = get_pitch_parselmouth(audiox.numpy()[0], hparams=config,
+            f0, uv = get_pitch_parselmouth(audio.numpy()[0], hparams=config, speed=speed,
                                            interp_uv=True, length=len(mel[0].T))
+            f0 *= speed
             np.savez(str(pathslist[2])[:-4]+f'_{str(i)}.npz', audio=audiox[0].numpy(), mel=mel[0].T, f0=f0, uv=uv)
             while True:
                 if not Q.full():
