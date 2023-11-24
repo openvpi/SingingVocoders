@@ -265,7 +265,7 @@ class Generators(torch.nn.Module):
 class HiFivae(torch.nn.Module):
     def __init__(self, h):
         super().__init__()
-        self.Generator = Generator(h)
+        self.Generator = Generators(h)
         # self.Generator2 = Generator(h)
         self.Encoder = Encoder(h)
 

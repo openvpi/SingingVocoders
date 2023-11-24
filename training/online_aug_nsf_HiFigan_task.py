@@ -28,13 +28,16 @@ from utils.training_utils import (
 )
 from utils.wav2F0 import get_pitch_parselmouth
 from utils.wav2mel import PitchAdjustableMelSpectrogram
+
+
 def spec_to_figure(spec, vmin=None, vmax=None):
     if isinstance(spec, torch.Tensor):
         spec = spec.cpu().numpy()
-    fig = plt.figure(figsize=(12, 9),dpi=100)
+    fig = plt.figure(figsize=(12, 9), dpi=100)
     plt.pcolor(spec.T, vmin=vmin, vmax=vmax)
     plt.tight_layout()
     return fig
+
 
 def dynamic_range_compression_torch(x, C=1, clip_val=1e-5):
     return torch.log(torch.clamp(x, min=clip_val) * C)
@@ -73,9 +76,6 @@ class nsf_HiFigan_dataset(Dataset):
     def __getitem__(self, index):
         data_path = self.data_index[index]
         data = np.load(data_path)
-        if self.infer:
-            return {'f0': data['f0'], 'spectrogram': data['mel'], 'audio': data['audio']}
-
         if not self.key_aug:
 
             return {'f0': data['f0'], 'spectrogram': data['mel'], 'audio': data['audio']}
@@ -84,8 +84,8 @@ class nsf_HiFigan_dataset(Dataset):
                 audio = torch.from_numpy(data['audio'])
                 speed = random.uniform(self.config['aug_min'], self.config['aug_max'])
                 audiox = wav_aug(audio, self.config["hop_size"], speed=speed)
-                mel = dynamic_range_compression_torch(self.mel_spec_transform(audiox[None,:]))
-                f0, uv = get_pitch_parselmouth(audiox.numpy(), hparams=self.config, speed=speed,
+                mel = dynamic_range_compression_torch(self.mel_spec_transform(audiox))
+                f0, uv = get_pitch_parselmouth(audio.numpy()[0], hparams=self.config, speed=speed,
                                                interp_uv=True, length=len(mel[0].T))
                 f0 *= speed
                 return {'f0': f0, 'spectrogram': mel[0].T.numpy(), 'audio': audiox.numpy()}
@@ -123,7 +123,7 @@ class nsf_HiFigan_dataset(Dataset):
             start *= samples_per_frame
             end *= samples_per_frame
             if self.infer:
-                cty=(len(record['spectrogram'].T) * samples_per_frame)
+                cty = (len(record['spectrogram'].T) * samples_per_frame)
                 record['audio'] = record['audio'][:cty]
                 record['audio'] = np.pad(record['audio'], (
                     0, (len(record['spectrogram'].T) * samples_per_frame) - len(record['audio'])),
@@ -170,32 +170,30 @@ class nsf_HiFigan_dataset(Dataset):
 
 class stftlog:
     def __init__(self,
-        n_fft=2048,
-        win_length=2048,
-        hop_length=512,
+                 n_fft=2048,
+                 win_length=2048,
+                 hop_length=512,
 
-        center=False,):
-        self.hop_length=hop_length
-        self.win_size=win_length
+                 center=False, ):
+        self.hop_length = hop_length
+        self.win_size = win_length
         self.n_fft = n_fft
         self.win_size = win_length
         self.center = center
         self.hann_window = {}
-    def exc(self,y):
 
-
+    def exc(self, y):
         hann_window_key = f"{y.device}"
         if hann_window_key not in self.hann_window:
             self.hann_window[hann_window_key] = torch.hann_window(
                 self.win_size, device=y.device
             )
 
-
         y = torch.nn.functional.pad(
             y.unsqueeze(1),
             (
                 int((self.win_size - self.hop_length) // 2),
-                int((self.win_size - self.hop_length+1) // 2),
+                int((self.win_size - self.hop_length + 1) // 2),
             ),
             mode="reflect",
         )
@@ -215,33 +213,36 @@ class stftlog:
         ).abs()
         return spec
 
+
 class nsf_HiFigan(GanBaseTask):
     def __init__(self, config):
         super().__init__(config)
-        self.TF = PitchAdjustableMelSpectrogram(        f_min=0,
-        f_max=None,
-        n_mels=256,)
+        self.TF = PitchAdjustableMelSpectrogram(f_min=0,
+                                                f_max=None,
+                                                n_mels=256, )
         self.logged_gt_wav = set()
-        self.stft=stftlog()
+        self.stft = stftlog()
 
     def build_dataset(self):
-
         self.train_dataset = nsf_HiFigan_dataset(config=self.config,
                                                  data_dir=pathlib.Path(self.config['DataIndexPath']) / self.config[
                                                      'train_set_name'])
         self.valid_dataset = nsf_HiFigan_dataset(config=self.config,
                                                  data_dir=pathlib.Path(self.config['DataIndexPath']) / self.config[
                                                      'valid_set_name'], infer=True)
-    def build_model(self):
-        cfg=self.config['model_args']
 
-        cfg.update({'sampling_rate':self.config['audio_sample_rate'],'num_mels':self.config['audio_num_mel_bins'],'hop_size':self.config['hop_size']})
-        h=AttrDict(cfg)
-        self.generator=Generator(h)
-        self.discriminator=nn.ModuleDict({'msd':MultiScaleDiscriminator(), 'mpd':MultiPeriodDiscriminator(periods=cfg['discriminator_periods'])})
+    def build_model(self):
+        cfg = self.config['model_args']
+
+        cfg.update({'sampling_rate': self.config['audio_sample_rate'], 'num_mels': self.config['audio_num_mel_bins'],
+                    'hop_size': self.config['hop_size']})
+        h = AttrDict(cfg)
+        self.generator = Generator(h)
+        self.discriminator = nn.ModuleDict(
+            {'msd': MultiScaleDiscriminator(), 'mpd': MultiPeriodDiscriminator(periods=cfg['discriminator_periods'])})
 
     def build_losses_and_metrics(self):
-        self.mix_loss=HiFiloss(self.config)
+        self.mix_loss = HiFiloss(self.config)
 
     def Gforward(self, sample, infer=False):
         """
@@ -249,13 +250,13 @@ class nsf_HiFigan(GanBaseTask):
             1. run the full model
             2. calculate losses if not infer
         """
-        wav=self.generator(x=sample['mel'], f0=sample['f0'])
-        return {'audio':wav}
+        wav = self.generator(x=sample['mel'], f0=sample['f0'])
+        return {'audio': wav}
 
     def Dforward(self, Goutput):
-        msd_out,msd_featrue=self.discriminator['msd'](Goutput)
-        mpd_out,mpd_featrue=self.discriminator['mpd'](Goutput)
-        return (msd_out,msd_featrue),(mpd_out,mpd_featrue)
+        msd_out, msd_featrue = self.discriminator['msd'](Goutput)
+        mpd_out, mpd_featrue = self.discriminator['mpd'](Goutput)
+        return (msd_out, msd_featrue), (mpd_out, mpd_featrue)
 
     def _training_step(self, sample, batch_idx):
         """
@@ -266,54 +267,53 @@ class nsf_HiFigan(GanBaseTask):
         log_diet = {}
         opt_g, opt_d = self.optimizers()
         # foeward generator start
-        Goutpt = self.Gforward(sample=sample)  #y_g_hat =Goutpt
+        Goutpt = self.Gforward(sample=sample)  # y_g_hat =Goutpt
         # foeward generator start
 
-        #foeward discriminator start
+        # foeward discriminator start
 
-        Dfake = self.Dforward(Goutput=Goutpt['audio'].detach()) #y_g_hat =Goutpt
-        Dtrue = self.Dforward(Goutput=sample['audio']) #y =sample['audio']
+        Dfake = self.Dforward(Goutput=Goutpt['audio'].detach())  # y_g_hat =Goutpt
+        Dtrue = self.Dforward(Goutput=sample['audio'])  # y =sample['audio']
         Dloss, Dlog = self.mix_loss.Dloss(Dfake=Dfake, Dtrue=Dtrue)
         log_diet.update(Dlog)
         # foeward discriminator end
-        #opt discriminator start
-        opt_d.zero_grad()  #clean discriminator grad
+        # opt discriminator start
+        opt_d.zero_grad()  # clean discriminator grad
         self.manual_backward(Dloss)
         opt_d.step()
         # opt discriminator end
         # opt generator start
         GDfake = self.Dforward(Goutput=Goutpt['audio'])
-        GDtrue=self.Dforward(Goutput=sample['audio'])
-        GDloss, GDlog = self.mix_loss.GDloss(GDfake=GDfake,GDtrue=GDtrue)
+        GDtrue = self.Dforward(Goutput=sample['audio'])
+        GDloss, GDlog = self.mix_loss.GDloss(GDfake=GDfake, GDtrue=GDtrue)
         log_diet.update(GDlog)
         Auxloss, Auxlog = self.mix_loss.Auxloss(Goutput=Goutpt, sample=sample)
 
         log_diet.update(Auxlog)
-        Dlosss=GDloss + Auxloss
+        Dlosss = GDloss + Auxloss
 
-        opt_g.zero_grad() #clean generator grad
+        opt_g.zero_grad()  # clean generator grad
         self.manual_backward(Dlosss)
         opt_g.step()
         # opt generator end
         return log_diet
 
     def _validation_step(self, sample, batch_idx):
-
-        wav=self.Gforward(sample)['audio']
+        wav = self.Gforward(sample)['audio']
 
         with torch.no_grad():
-
             # self.TF = self.TF.cpu()
             # mels = torch.log10(torch.clamp(self.TF(wav.squeeze(0).cpu().float()), min=1e-5))
             # GTmels = torch.log10(torch.clamp(self.TF(sample['audio'].squeeze(0).cpu().float()), min=1e-5))
-            stfts=self.stft.exc(wav.squeeze(0).cpu().float())
-            Gstfts=self.stft.exc(sample['audio'].squeeze(0).cpu().float())
-            Gstfts_log10=torch.log10(torch.clamp(Gstfts, min=1e-7))
+            stfts = self.stft.exc(wav.squeeze(0).cpu().float())
+            Gstfts = self.stft.exc(sample['audio'].squeeze(0).cpu().float())
+            Gstfts_log10 = torch.log10(torch.clamp(Gstfts, min=1e-7))
             Gstfts_log = torch.log(torch.clamp(Gstfts, min=1e-7))
-            stfts_log10=torch.log10(torch.clamp(stfts, min=1e-7))
-            stfts_log= torch.log(torch.clamp(stfts, min=1e-7))
+            stfts_log10 = torch.log10(torch.clamp(stfts, min=1e-7))
+            stfts_log = torch.log(torch.clamp(stfts, min=1e-7))
             # self.plot_mel(batch_idx, GTmels.transpose(1,2), mels.transpose(1,2), name=f'diffmel_{batch_idx}')
-            self.plot_mel(batch_idx, Gstfts_log10.transpose(1,2), stfts_log10.transpose(1,2), name=f'HIFImel_{batch_idx}/log10')
+            self.plot_mel(batch_idx, Gstfts_log10.transpose(1, 2), stfts_log10.transpose(1, 2),
+                          name=f'HIFImel_{batch_idx}/log10')
             # self.plot_mel(batch_idx, Gstfts_log.transpose(1, 2), stfts_log.transpose(1, 2), name=f'HIFImel_{batch_idx}/log')
             self.logger.experiment.add_audio(f'diff_{batch_idx}_', wav,
                                              sample_rate=self.config['audio_sample_rate'],
@@ -325,7 +325,7 @@ class nsf_HiFigan(GanBaseTask):
                                                  global_step=self.global_step)
                 self.logged_gt_wav.add(batch_idx)
 
-        return {'l1loss':nn.L1Loss()(wav, sample['audio'])}, 1
+        return {'l1loss': nn.L1Loss()(wav, sample['audio'])}, 1
 
     def plot_mel(self, batch_idx, spec, spec_out, name=None):
         name = f'mel_{batch_idx}' if name is None else name
@@ -333,4 +333,3 @@ class nsf_HiFigan(GanBaseTask):
         vmax = self.config['mel_vmax']
         spec_cat = torch.cat([(spec_out - spec).abs() + vmin, spec, spec_out], -1)
         self.logger.experiment.add_figure(name, spec_to_figure(spec_cat[0], vmin, vmax), self.global_step)
-

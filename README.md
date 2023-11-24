@@ -36,7 +36,7 @@ val_num: 5 这个是你要的 val 数量，预处理的时候会自动抽取文�
 
 正常情况下只有这三个要改
 ```
-# 数据增强
+# 离线 数据增强
 将预处理脚本替换为[process_aug.py](process_aug.py) 并增添配置项
 ```
 aug_min: 0.9 最小变调倍数
@@ -44,7 +44,14 @@ aug_max: 1.4 最大变调倍数
 aug_num: 1 数据增强倍数
 ```
 即可，注意数据增强可能会损伤音质！
-
+# 在线数据增强
+增加配置项 注意使用在线数据增强请使用[process.py](process.py) 脚本
+```angular2html
+key_aug: true
+key_aug_prob: 0.5
+aug_min: 0.9 最小变调倍数
+aug_max: 1.4 最大变调倍数
+```
 # 训练
 python [train.py](train.py) --config 配置文件 --exp_name ckpt名字 --work_dir 工作目录（可选）
 

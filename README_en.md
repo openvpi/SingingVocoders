@@ -59,7 +59,15 @@ aug_max: 1.4   Maximum Variable Adjustment Multiplier
 aug_num: 1   Data Enhancement Multiplier
 ```
 That's it. Note that data augmentation may damage the sound quality!
-
+# Online Data augmentation (recommend)
+Note that to use the online data enhancement, use the [process.py](process.py) script.
+```angular2html
+key_aug: true
+key_aug_prob: 0.5
+aug_min: 0.9  Minimum Transpose Multiplier
+aug_max: 1.4   Maximum Variable Adjustment Multiplier
+```
+Note that data augmentation may damage the sound quality!
 # Note
 
 Because of some problems the actual number of steps is half of what he shows
