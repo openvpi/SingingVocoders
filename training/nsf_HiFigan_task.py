@@ -36,7 +36,7 @@ def spec_to_figure(spec, vmin=None, vmax=None):
     plt.tight_layout()
     return fig
 
-def dynamic_range_compression_torch(x, C=1, clip_val=1e-5):
+def dynamic_range_compression_torch(x, C=1, clip_val=1e-9):
     return torch.log(torch.clamp(x, min=clip_val) * C)
 
 
