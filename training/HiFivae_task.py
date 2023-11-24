@@ -86,13 +86,13 @@ class nsf_HiFigan_dataset(Dataset):
                 audio = torch.from_numpy(data['audio'])
                 speed = random.uniform(self.config['aug_min'], self.config['aug_max'])
                 audiox = wav_aug(audio, self.config["hop_size"], speed=speed)
-                mel = dynamic_range_compression_torch(self.mel_spec_transform(audiox[None,:]))
-                f0, uv = get_pitch_parselmouth(audiox.numpy(), hparams=self.config, speed=speed,
-                                               interp_uv=True, length=len(mel[0].T))
-                if f0 is None:
-                    return {'f0': data['f0'], 'spectrogram': data['mel'], 'audio': data['audio']}
-                f0 *= speed
-                return {'f0': f0, 'spectrogram': mel[0].T.numpy(), 'audio': audiox.numpy()}
+                # mel = dynamic_range_compression_torch(self.mel_spec_transform(audiox[None,:]))
+                # f0, uv = get_pitch_parselmouth(audiox.numpy(), hparams=self.config, speed=speed,
+                #                                interp_uv=True, length=len(mel[0].T))
+                # if f0 is None:
+                #     return {'f0': data['f0'], 'spectrogram': data['mel'], 'audio': data['audio']}
+                # f0 *= speed
+                return {'f0': data['f0'], 'spectrogram': data['mel'], 'audio': audiox.numpy()}
 
             else:
                 return {'f0': data['f0'], 'spectrogram': data['mel'], 'audio': data['audio']}

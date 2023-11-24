@@ -3,10 +3,20 @@ base_config:
   - configs/base.yaml
 
 
+aug_min: 0.8
+aug_max: 1.8
+aug_num: 1
+
+key_aug: true
+key_aug_prob: 0.6
+
 #lab_aux_loss: 45
 lab_aux_loss: 2.5
 lab_kl_loss: 0.02
-lab_wav_loss: 5
+RSSloss_stftmax: 2048
+RSSloss_stftmin: 128
+RSSloss_stftnum: 12
+lab_wav_loss: 0
 raw_data_dir: []
 binary_data_dir: null
 binarization_args:
@@ -19,23 +29,23 @@ train_set_name: train
 
 
 volume_aug: True
-volume_aug_prob: 0.5
+volume_aug_prob: 0.7
 
 
 mel_vmin: -6. #-6.
 mel_vmax: 1.5
 
-aux_step: 32000
+aux_step: 16000
 audio_sample_rate: 44100
-audio_num_mel_bins: 128
-#audio_num_mel_bins: 192
+#audio_num_mel_bins: 128
+audio_num_mel_bins: 192
 hop_size: 512            # Hop size.
 fft_size: 2048           # FFT size.
 win_size: 2048           # FFT size.
 fmin: 40
 fmax: 16000
 fmax_for_loss: null
-crop_mel_frames: 20
+crop_mel_frames: 22
 
 
 # global constants
@@ -93,6 +103,7 @@ ds_workers: 4
 dataloader_prefetch_factor: 2
 
 batch_size: 6
+use_rss_loss: true
 
 
 

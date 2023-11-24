@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from modules.ddsp.loss import RSSLoss
 from modules.loss.stft_loss import warp_stft
 from utils.wav2mel import PitchAdjustableMelSpectrogram
 def kl_loss(logs, m):
@@ -25,6 +26,10 @@ class HiFiloss(nn.Module):
         self.lab_wav_loss=config.get('lab_wav_loss',5)
         self.stft = warp_stft({'fft_sizes': config['loss_fft_sizes'], 'hop_sizes': config['loss_hop_sizes'],
                                'win_lengths': config['loss_win_lengths']})
+        if config.get('use_rss_loss',False):
+
+            self.loss_rss_func = RSSLoss(fft_min=config['RSSloss_stftmin'], fft_max=config['RSSloss_stftmax'], n_scale=config['RSSloss_stftnum'], device='cuda')
+        self.useRSS=config.get('use_rss_loss',False)
 
     def discriminator_loss(self,disc_real_outputs, disc_generated_outputs):
         loss = 0
@@ -105,8 +110,12 @@ class HiFiloss(nn.Module):
         sc_loss, mag_loss=self.stft.stft(Goutput['audio'].squeeze(1), sample['audio'].squeeze(1))
         klloss=kl_loss(logs=Goutput['lossxxs'][2],m=Goutput['lossxxs'][1])
         wavloss= F.l1_loss(Goutput['audio'], sample['audio'])
+        if self.useRSS:
+            RSSLoss=self.loss_rss_func(Goutput['audio'].squeeze(1), sample['audio'].squeeze(1))
+        else:
+            RSSLoss=0
 
-        loss=(sc_loss+ mag_loss)*self.labauxloss +klloss*self.lab_kl_loss +wavloss*self.lab_wav_loss
+        loss=(sc_loss+ mag_loss+RSSLoss)*self.labauxloss +klloss*self.lab_kl_loss +wavloss*self.lab_wav_loss
 
-        return loss,{'auxloss':loss,'auxloss_sc_loss':sc_loss,'auxloss_mag_loss':mag_loss,'klloss':klloss,'wavloss':wavloss}
+        return loss,{'auxloss':loss,'auxloss_sc_loss':sc_loss,'auxloss_mag_loss':mag_loss,'klloss':klloss,'wavloss':wavloss,'RSSLoss':RSSLoss}
     #

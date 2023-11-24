@@ -7,23 +7,26 @@ from utils.wav2mel import PitchAdjustableMelSpectrogram
 
 
 class HiFiloss(nn.Module):
-    def __init__(self,config:dict):
+    def __init__(self, config: dict):
         super().__init__()
-        self.mel=PitchAdjustableMelSpectrogram( sample_rate=config['audio_sample_rate'],
-        n_fft=config['fft_size'],
-        win_length=config['win_size'],
-        hop_length=config['hop_size'],
-        f_min=config['fmin'],
-        f_max=config['fmax_for_loss'],
-        n_mels=config['audio_num_mel_bins'],)
-        self.L1loss=nn.L1Loss()
-        self.labauxloss=config.get('lab_aux_loss',45)
-        self.stft=warp_stft()
+        self.mel = PitchAdjustableMelSpectrogram(sample_rate=config['audio_sample_rate'],
+                                                 n_fft=config['fft_size'],
+                                                 win_length=config['win_size'],
+                                                 hop_length=config['hop_size'],
+                                                 f_min=config['fmin'],
+                                                 f_max=config['fmax_for_loss'],
+                                                 n_mels=config['audio_num_mel_bins'], )
+        self.L1loss = nn.L1Loss()
+        self.labauxloss = config.get('lab_aux_loss', 45)
+        if config.get('use_stftloss', False):
+            self.stft = warp_stft({'fft_sizes': config['loss_fft_sizes'], 'hop_sizes': config['loss_hop_sizes'],
+                                   'win_lengths': config['loss_win_lengths']})
+        self.use_stftloss = config.get('use_stftloss', False)
 
-    def discriminator_loss(self,disc_real_outputs, disc_generated_outputs):
+    def discriminator_loss(self, disc_real_outputs, disc_generated_outputs):
         loss = 0
-        rlosses=0
-        glosses=0
+        rlosses = 0
+        glosses = 0
         r_losses = []
         g_losses = []
 
@@ -31,24 +34,24 @@ class HiFiloss(nn.Module):
             r_loss = torch.mean((1 - dr) ** 2)
             g_loss = torch.mean(dg ** 2)
             loss += r_loss + g_loss
-            rlosses+=r_loss.item()
-            glosses +=g_loss.item()
+            rlosses += r_loss.item()
+            glosses += g_loss.item()
             r_losses.append(r_loss.item())
             g_losses.append(g_loss.item())
 
-        return loss, rlosses,glosses,r_losses, g_losses
+        return loss, rlosses, glosses, r_losses, g_losses
 
+    def Dloss(self, Dfake, Dtrue):
 
-    def Dloss(self,Dfake, Dtrue):
-
-        (Fmsd_out, _), (Fmpd_out, _)=Dfake
-        (Tmsd_out, _), (Tmpd_out, _)=Dtrue
-        msdloss, msdrlosses, msdglosses, _, _=self.discriminator_loss(Tmsd_out,Fmsd_out)
+        (Fmsd_out, _), (Fmpd_out, _) = Dfake
+        (Tmsd_out, _), (Tmpd_out, _) = Dtrue
+        msdloss, msdrlosses, msdglosses, _, _ = self.discriminator_loss(Tmsd_out, Fmsd_out)
         mpdloss, mpdrlosses, mpdglosses, _, _ = self.discriminator_loss(Tmpd_out, Fmpd_out)
-        loss=msdloss+mpdloss
-        return loss,{'DmsdlossF':msdglosses,'DmsdlossT':msdrlosses,'DmpdlossT':mpdrlosses,'DmpdlossF':mpdglosses}
+        loss = msdloss + mpdloss
+        return loss, {'DmsdlossF': msdglosses, 'DmsdlossT': msdrlosses, 'DmpdlossT': mpdrlosses,
+                      'DmpdlossF': mpdglosses}
 
-    def feature_loss(self,fmap_r, fmap_g):
+    def feature_loss(self, fmap_r, fmap_g):
         loss = 0
         for dr, dg in zip(fmap_r, fmap_g):
             for rl, gl in zip(dr, dg):
@@ -56,47 +59,53 @@ class HiFiloss(nn.Module):
 
         return loss * 2
 
-    def GDloss(self,GDfake,GDtrue):
+    def GDloss(self, GDfake, GDtrue):
         loss = 0
         gen_losses = []
-        msd_losses=0
+        msd_losses = 0
         mpd_losses = 0
-        (msd_out, Fmsd_featrue), (mpd_out, Fmpd_featrue)=GDfake
+        (msd_out, Fmsd_featrue), (mpd_out, Fmpd_featrue) = GDfake
         (_, Tmsd_featrue), (_, Tmpd_featrue) = GDtrue
         for dg in msd_out:
             l = torch.mean((1 - dg) ** 2)
             gen_losses.append(l.item())
             # loss += l
-            msd_losses=l+msd_losses
+            msd_losses = l + msd_losses
 
         for dg in mpd_out:
             l = torch.mean((1 - dg) ** 2)
             gen_losses.append(l.item())
             # loss += l
-            mpd_losses=l+mpd_losses
+            mpd_losses = l + mpd_losses
 
-        msd_featrue_loss=self.feature_loss(Tmsd_featrue,Fmsd_featrue)
+        msd_featrue_loss = self.feature_loss(Tmsd_featrue, Fmsd_featrue)
         mpd_featrue_loss = self.feature_loss(Tmpd_featrue, Fmpd_featrue)
         # loss +=msd_featrue_loss
         # loss +=mpd_featrue_loss
-        loss= msd_featrue_loss+mpd_featrue_loss+mpd_losses+msd_losses
+        loss = msd_featrue_loss + mpd_featrue_loss + mpd_losses + msd_losses
         # (msd_losses, mpd_losses), (msd_featrue_loss, mpd_featrue_loss), gen_losses
-        return loss, {'Gmsdloss':msd_losses,'Gmpdloss':mpd_losses,'Gmsd_featrue_loss':msd_featrue_loss,'Dmpd_featrue_loss':mpd_featrue_loss}
+        return loss, {'Gmsdloss': msd_losses, 'Gmpdloss': mpd_losses, 'Gmsd_featrue_loss': msd_featrue_loss,
+                      'Dmpd_featrue_loss': mpd_featrue_loss}
 
-    def Auxloss(self,Goutput, sample):
+    def Auxloss(self, Goutput, sample):
 
-        Gmel=self.mel.dynamic_range_compression_torch(self.mel(Goutput['audio'].squeeze(1)))
+        if self.use_stftloss:
+            sc_loss, mag_loss = self.stft.stft(Goutput['audio'].squeeze(1), sample['audio'].squeeze(1))
+            loss = (sc_loss + mag_loss) * self.labauxloss
+            return loss, {'auxloss': loss, 'auxloss_sc_loss': sc_loss, 'auxloss_mag_loss': mag_loss}
+
+        Gmel = self.mel.dynamic_range_compression_torch(self.mel(Goutput['audio'].squeeze(1)))
         # Rmel=sample['mel']
         Rmel = self.mel.dynamic_range_compression_torch(self.mel(sample['audio'].squeeze(1)))
-        loss=self.L1loss(Gmel, Rmel)*self.labauxloss
-        return loss,{'auxloss':loss}
+        loss = self.L1loss(Gmel, Rmel) * self.labauxloss
+        return loss, {'auxloss': loss}
 
     # def Auxloss(self,Goutput, sample):
     #
-    #     # Gmel=self.mel.dynamic_range_compression_torch(self.mel(Goutput['audio'].squeeze(1)))
-    #     # # Rmel=sample['mel']
-    #     # Rmel = self.mel.dynamic_range_compression_torch(self.mel(sample['audio'].squeeze(1)))
-    #     sc_loss, mag_loss=self.stft.stft(Goutput['audio'].squeeze(1), sample['audio'].squeeze(1))
-    #     loss=(sc_loss+ mag_loss)*self.labauxloss
-    #     return loss,{'auxloss':loss,'auxloss_sc_loss':sc_loss,'auxloss_mag_loss':mag_loss}
+    # Gmel=self.mel.dynamic_range_compression_torch(self.mel(Goutput['audio'].squeeze(1)))
+    # # Rmel=sample['mel']
+    # Rmel = self.mel.dynamic_range_compression_torch(self.mel(sample['audio'].squeeze(1)))
+    # sc_loss, mag_loss=self.stft.stft(Goutput['audio'].squeeze(1), sample['audio'].squeeze(1))
+    # loss=(sc_loss+ mag_loss)*self.labauxloss
+    # return loss,{'auxloss':loss,'auxloss_sc_loss':sc_loss,'auxloss_mag_loss':mag_loss}
     #
