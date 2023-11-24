@@ -4,7 +4,7 @@ base_config:
 
 
 #lab_aux_loss: 45
-lab_aux_loss: 4.5
+lab_aux_loss: 2.5
 lab_kl_loss: 0.02
 lab_wav_loss: 5
 raw_data_dir: []
