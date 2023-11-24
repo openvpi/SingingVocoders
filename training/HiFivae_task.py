@@ -9,6 +9,7 @@ import lightning.pytorch as pl
 import matplotlib
 import numpy as np
 import torch.utils.data
+import torchaudio
 from lightning.pytorch.utilities.rank_zero import rank_zero_debug, rank_zero_info, rank_zero_only
 from matplotlib import pyplot as plt
 from torch import nn
@@ -26,6 +27,7 @@ from utils.training_utils import (
     DsBatchSampler, DsEvalBatchSampler,
     get_latest_checkpoint_path
 )
+from utils.wav2F0 import get_pitch_parselmouth
 from utils.wav2mel import PitchAdjustableMelSpectrogram
 def spec_to_figure(spec, vmin=None, vmax=None):
     if isinstance(spec, torch.Tensor):
@@ -34,6 +36,16 @@ def spec_to_figure(spec, vmin=None, vmax=None):
     plt.pcolor(spec.T, vmin=vmin, vmax=vmax)
     plt.tight_layout()
     return fig
+
+def dynamic_range_compression_torch(x, C=1, clip_val=1e-5):
+    return torch.log(torch.clamp(x, min=clip_val) * C)
+
+
+def wav_aug(wav, hop_size, speed=1):
+    orig_freq = int(np.round(hop_size * speed))
+    new_freq = hop_size
+    return torchaudio.transforms.Resample(orig_freq=orig_freq, new_freq=new_freq)(wav)
+
 
 class nsf_HiFigan_dataset(Dataset):
 
@@ -48,13 +60,40 @@ class nsf_HiFigan_dataset(Dataset):
         self.infer = infer
         self.volume_aug = self.config['volume_aug']
         self.volume_aug_prob = self.config['volume_aug_prob'] if not infer else 0
+        self.key_aug = self.config.get('key_aug', False)
+        self.key_aug_prob = self.config.get('key_aug_prob', 0.5)
+        if self.key_aug:
+            self.mel_spec_transform = PitchAdjustableMelSpectrogram(sample_rate=config['audio_sample_rate'],
+                                                                    n_fft=config['fft_size'],
+                                                                    win_length=config['win_size'],
+                                                                    hop_length=config['hop_size'],
+                                                                    f_min=config['fmin'],
+                                                                    f_max=config['fmax'],
+                                                                    n_mels=config['audio_num_mel_bins'], )
 
 
     def __getitem__(self, index):
         data_path = self.data_index[index]
         data = np.load(data_path)
+        if self.infer:
+            return {'f0': data['f0'], 'spectrogram': data['mel'], 'audio': data['audio']}
 
-        return {'f0':data['f0'],'spectrogram':data['mel'],'audio':data['audio']}
+        if not self.key_aug:
+
+            return {'f0': data['f0'], 'spectrogram': data['mel'], 'audio': data['audio']}
+        else:
+            if random.random() < self.key_aug_prob:
+                audio = torch.from_numpy(data['audio'])
+                speed = random.uniform(self.config['aug_min'], self.config['aug_max'])
+                audiox = wav_aug(audio, self.config["hop_size"], speed=speed)
+                mel = dynamic_range_compression_torch(self.mel_spec_transform(audiox[None,:]))
+                f0, uv = get_pitch_parselmouth(audiox.numpy(), hparams=self.config, speed=speed,
+                                               interp_uv=True, length=len(mel[0].T))
+                f0 *= speed
+                return {'f0': f0, 'spectrogram': mel[0].T.numpy(), 'audio': audiox.numpy()}
+
+            else:
+                return {'f0': data['f0'], 'spectrogram': data['mel'], 'audio': data['audio']}
 
     def __len__(self):
         return len(self.data_index)
