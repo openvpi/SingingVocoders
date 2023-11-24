@@ -23,7 +23,7 @@ volume_aug_prob: 0.5
 mel_vmin: -6. #-6.
 mel_vmax: 1.5
 
-aux_step: 16000
+aux_step: 32000
 audio_sample_rate: 44100
 audio_num_mel_bins: 128
 #audio_num_mel_bins: 192
@@ -54,8 +54,8 @@ model_args:
   upsample_initial_channel: 512
   resblock_kernel_sizes: [ 3,7,11 ]
   resblock_dilation_sizes: [ [ 1,3,5 ], [ 1,3,5 ], [ 1,3,5 ] ]
-#  discriminator_periods: [ 3, 5, 7, 11, 17, 23, 37 ]
-  discriminator_periods: [ 3, 5, 7 ]
+  discriminator_periods: [ 3, 5, 7, 11, 17, 23, 37 ]
+#  discriminator_periods: [ 3, 5, 7,11, 17 ]
   resblock: "1"
 
 # training
@@ -90,7 +90,7 @@ clip_grad_norm: null
 ds_workers: 4
 dataloader_prefetch_factor: 2
 
-batch_size: 12
+batch_size: 6
 
 
 
@@ -109,8 +109,8 @@ permanent_ckpt_interval: 40000
 ###########
 pl_trainer_accelerator: 'auto'
 pl_trainer_devices: 'auto'
-#pl_trainer_precision: '32-true'
-pl_trainer_precision: 'bf16'
+pl_trainer_precision: '32-true'
+#pl_trainer_precision: 'bf16'
 pl_trainer_num_nodes: 1
 pl_trainer_strategy: 'auto'
 ddp_backend: 'nccl' # choose from 'gloo', 'nccl', 'nccl_no_p2p'
