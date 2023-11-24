@@ -5,6 +5,8 @@ base_config:
 
 #lab_aux_loss: 45
 lab_aux_loss: 4.5
+lab_kl_loss: 0.02
+lab_wav_loss: 5
 raw_data_dir: []
 binary_data_dir: null
 binarization_args:
@@ -99,7 +101,7 @@ log_interval: 100
 num_sanity_val_steps: 1  # steps of validation at the beginning
 val_check_interval: 4000
 num_ckpt_keep: 5
-max_updates: 100000
+max_updates: 5000000
 permanent_ckpt_start: 200000
 permanent_ckpt_interval: 40000
 
@@ -114,7 +116,7 @@ pl_trainer_precision: '32-true'
 pl_trainer_num_nodes: 1
 pl_trainer_strategy: 'auto'
 ddp_backend: 'nccl' # choose from 'gloo', 'nccl', 'nccl_no_p2p'
-seed: 114514
+seed: 1234
 
 ###########
 # finetune

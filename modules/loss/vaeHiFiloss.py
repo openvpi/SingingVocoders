@@ -21,6 +21,8 @@ class HiFiloss(nn.Module):
         n_mels=config['audio_num_mel_bins'],)
         self.L1loss=nn.L1Loss()
         self.labauxloss=config.get('lab_aux_loss',45)
+        self.lab_kl_loss=config.get('lab_kl_loss',0.02)
+        self.lab_wav_loss=config.get('lab_wav_loss',5)
         self.stft = warp_stft({'fft_sizes': config['loss_fft_sizes'], 'hop_sizes': config['loss_hop_sizes'],
                                'win_lengths': config['loss_win_lengths']})
 
@@ -103,7 +105,8 @@ class HiFiloss(nn.Module):
         sc_loss, mag_loss=self.stft.stft(Goutput['audio'].squeeze(1), sample['audio'].squeeze(1))
         klloss=kl_loss(logs=Goutput['lossxxs'][2],m=Goutput['lossxxs'][1])
         wavloss= F.l1_loss(Goutput['audio'], sample['audio'])
-        loss=(sc_loss+ mag_loss)*self.labauxloss +klloss*0.02+wavloss*5
+
+        loss=(sc_loss+ mag_loss)*self.labauxloss +klloss*self.lab_kl_loss +wavloss*self.lab_wav_loss
 
         return loss,{'auxloss':loss,'auxloss_sc_loss':sc_loss,'auxloss_mag_loss':mag_loss,'klloss':klloss,'wavloss':wavloss}
     #
