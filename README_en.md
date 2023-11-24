@@ -51,21 +51,22 @@ if you finish training you can use this script to export the diffsinger vocoder 
 python export_ckpt.py --exp_name (your ckpt name)  --save_path (output ckpt path) --work_dir Working catalogue (optional)
 ```
 
-# Data augmentation
+# Offline data augmentation
 Replace the preprocessing script with [process_aug.py](process_aug.py) and add configuration entries
 ```
-aug_min: 0.9  Minimum Transpose Multiplier
-aug_max: 1.4   Maximum Variable Adjustment Multiplier
-aug_num: 1   Data Enhancement Multiplier
+key_aug: false (Do not augment during training)
+aug_min: 0.9  (Minimum f0 adjustment multiplier)
+aug_max: 1.4   (Maximum f0 adjustment multiplier)
+aug_num: 1   (Data augmentation multiplier)
 ```
 That's it. Note that data augmentation may damage the sound quality!
-# Online Data augmentation (recommend)
-Note that to use the online data enhancement, use the [process.py](process.py) script.
+# Online data augmentation (recommend)
+Note that to use the online data augmentation, use the [process.py](process.py) script, otherwise offline and online augmentation will be superimposed
 ```angular2html
-key_aug: true
-key_aug_prob: 0.5
-aug_min: 0.9  Minimum Transpose Multiplier
-aug_max: 1.4   Maximum Variable Adjustment Multiplier
+key_aug: true (Do augment during training)
+key_aug_prob: 0.5 (Data augmentation probability)
+aug_min: 0.9  (Minimum f0 adjustment multiplier)
+aug_max: 1.4   (Maximum f0 adjustment multiplier)
 ```
 Note that data augmentation may damage the sound quality!
 # Note
