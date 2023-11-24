@@ -36,14 +36,14 @@ def wav2spec(warp):
     try:
         audio, sr = torchaudio.load(pathslist[0])
         if sr != config['audio_sample_rate']:
-            print('error:', str(pathslist[0]))
+            print('error:flie_', str(pathslist[0]),f'_audio_sample_rate is {str(sr)} not {str(config["audio_sample_rate"])}')
             return None
         mel = dynamic_range_compression_torch(mel_spec_transform(audio))
         f0, uv = get_pitch_parselmouth(audio.numpy()[0], hparams=config,
                                        interp_uv=True, length=len(mel[0].T))
 
         if f0 is None:
-            print('error:', str(pathslist[0]))
+            print('error:file_', str(pathslist[0]),'_can not get_pitch ')
             return None
         pathslist[1].mkdir(parents=True, exist_ok=True)
         np.savez(pathslist[2], audio=audio[0].numpy(), mel=mel[0].T, f0=f0, uv=uv)
