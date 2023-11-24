@@ -85,7 +85,7 @@ class nsf_HiFigan_dataset(Dataset):
                 speed = random.uniform(self.config['aug_min'], self.config['aug_max'])
                 audiox = wav_aug(audio, self.config["hop_size"], speed=speed)
                 mel = dynamic_range_compression_torch(self.mel_spec_transform(audiox[None,:]))
-                f0, uv = get_pitch_parselmouth(audiox.numpy(), hparams=self.config, speed=speed,
+                f0, uv = get_pitch_parselmouth(audio.numpy(), hparams=self.config, speed=speed,
                                                interp_uv=True, length=len(mel[0].T))
                 if f0 is None:
                     return {'f0': data['f0'], 'spectrogram': data['mel'], 'audio': data['audio']}
