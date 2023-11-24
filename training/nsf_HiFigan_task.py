@@ -318,7 +318,7 @@ class nsf_HiFigan(GanBaseTask):
             # self.plot_mel(batch_idx, GTmels.transpose(1,2), mels.transpose(1,2), name=f'diffmel_{batch_idx}')
             self.plot_mel(batch_idx, Gstfts_log10.transpose(1,2), stfts_log10.transpose(1,2), name=f'HIFImel_{batch_idx}/log10')
             # self.plot_mel(batch_idx, Gstfts_log.transpose(1, 2), stfts_log.transpose(1, 2), name=f'HIFImel_{batch_idx}/log')
-            self.logger.experiment.add_audio(f'diff_{batch_idx}_', wav,
+            self.logger.experiment.add_audio(f'HIFI_{batch_idx}_', wav,
                                              sample_rate=self.config['audio_sample_rate'],
                                              global_step=self.global_step)
             if batch_idx not in self.logged_gt_wav:
