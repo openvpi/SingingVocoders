@@ -145,19 +145,20 @@ class nsf_HiFigan_dataset(Dataset):
                     # del record['pemel']
                     # del record['uv']
                     continue
+                audio = record['audio']
+                audio_mel = record['spectrogram']
 
                 if random.random() < self.volume_aug_prob:
-                    audio = record['audio']
-                    audio_mel = record['spectrogram']
+
                     max_amp = float(np.max(np.abs(audio))) + 1e-5
                     max_shift = min(3, np.log(1 / max_amp))
                     log_mel_shift = random.uniform(-3, max_shift)
                     # audio *= (10 ** log_mel_shift)
                     audio *= np.exp(log_mel_shift)
                     audio_mel += log_mel_shift
-                    audio_mel = torch.clamp(torch.from_numpy(audio_mel), min=np.log(1e-5)).numpy()
-                    record['audio'] = audio
-                    record['spectrogram'] = audio_mel
+                audio_mel = torch.clamp(torch.from_numpy(audio_mel), min=np.log(1e-5)).numpy()
+                record['audio'] = audio
+                record['spectrogram'] = audio_mel
 
         audio = np.stack([record['audio'] for record in minibatch if 'audio' in record])
 
