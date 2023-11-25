@@ -26,9 +26,9 @@ val_num: 1 这个是你要的 val 数量
 
 例子
 ```
-data_input_path: [’wav/in1‘,’wav/in2‘] 这个是你的wav的输入目录
+data_input_path: ['wav/in1','wav/in2'] 这个是你的wav的输入目录
 
-data_out_path: [’wav/out1‘,’wav/out2‘]这个是你的npz的输出目录
+data_out_path: ['wav/out1','wav/out2']这个是你的npz的输出目录
 val_num: 5 这个是你要的 val 数量，预处理的时候会自动抽取文件
 两个列表里面的路径是一一对应的所以说数量要一样
 
@@ -110,7 +110,7 @@ python export_ckpt.py --exp_name (your ckpt name)  --save_path (output ckpt path
 
 不要使用bf16训练模型, 它可能导致音质问题
 
-2000 步左右即可微调完成
+2000 步左右即可微调完成 (显示的是4000步)
 
 冻结 mpd 模块可能可以有更好的结果
 
