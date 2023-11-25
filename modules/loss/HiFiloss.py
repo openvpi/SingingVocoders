@@ -17,7 +17,8 @@ class HiFiloss(nn.Module):
                                                  f_max=config['fmax_for_loss'],
                                                  n_mels=config['audio_num_mel_bins'], )
         self.L1loss = nn.L1Loss()
-        self.labauxloss = config.get('lab_aux_loss', 45)
+        self.lab_aux_mel_loss = config.get('lab_aux_melloss', 45)
+        self.lab_aux_stft_loss = config.get('lab_aux_stftloss', 2.5)
         if config.get('use_stftloss', False):
             self.stft = warp_stft({'fft_sizes': config['loss_fft_sizes'], 'hop_sizes': config['loss_hop_sizes'],
                                    'win_lengths': config['loss_win_lengths']})
@@ -88,17 +89,15 @@ class HiFiloss(nn.Module):
                       'Dmpd_featrue_loss': mpd_featrue_loss}
 
     def Auxloss(self, Goutput, sample):
-
+        Gmel = self.mel.dynamic_range_compression_torch(self.mel(Goutput['audio'].squeeze(1)))
+        Rmel = self.mel.dynamic_range_compression_torch(self.mel(sample['audio'].squeeze(1)))
+        mel_loss = self.L1loss(Gmel, Rmel) * self.lab_aux_mel_loss
         if self.use_stftloss:
             sc_loss, mag_loss = self.stft.stft(Goutput['audio'].squeeze(1), sample['audio'].squeeze(1))
-            loss = (sc_loss + mag_loss) * self.labauxloss
-            return loss, {'auxloss': loss, 'auxloss_sc_loss': sc_loss, 'auxloss_mag_loss': mag_loss}
-
-        Gmel = self.mel.dynamic_range_compression_torch(self.mel(Goutput['audio'].squeeze(1)))
-        # Rmel=sample['mel']
-        Rmel = self.mel.dynamic_range_compression_torch(self.mel(sample['audio'].squeeze(1)))
-        loss = self.L1loss(Gmel, Rmel) * self.labauxloss
-        return loss, {'auxloss': loss}
+            stft_loss = (sc_loss + mag_loss) * self.lab_aux_stft_loss
+            loss = mel_loss + stft_loss
+            return loss, {'auxloss': loss, 'auxloss_mel': mel_loss, 'auxloss_stft': stft_loss}
+        return mel_loss, {'auxloss': mel_loss}
 
     # def Auxloss(self,Goutput, sample):
     #
