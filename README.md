@@ -101,6 +101,17 @@ python process.py --config (your config path) --num_cpu (Number of cpu threads u
 python train.py --config (your config path) --exp_name (your ckpt name) --work_dir Working catalogue (optional)
 
 ```
+测试中的配置项
+```angular2html
+
+use_stftloss: false  启用stft loss
+
+
+
+lab_aux_melloss: 45
+lab_aux_stftloss: 2.5 两种loss的混合控制
+```
+如果有其他需要可以修改base_hifi.yaml 的stftloss相关参数
 ## 导出
 ```angular2html
 python export_ckpt.py --exp_name (your ckpt name)  --save_path (output ckpt path) --work_dir Working catalogue (optional)
