@@ -1,5 +1,6 @@
 import multiprocessing
 import pathlib
+import random
 import time
 from concurrent.futures import ProcessPoolExecutor
 from threading import Thread
@@ -36,14 +37,15 @@ def wav2spec(warp):
     try:
         audio, sr = torchaudio.load(pathslist[0])
         if sr != config['audio_sample_rate']:
-            print('error:flie_', str(pathslist[0]),f'_audio_sample_rate is {str(sr)} not {str(config["audio_sample_rate"])}')
+            print('error:flie_', str(pathslist[0]),
+                  f'_audio_sample_rate is {str(sr)} not {str(config["audio_sample_rate"])}')
             return None
         mel = dynamic_range_compression_torch(mel_spec_transform(audio))
         f0, uv = get_pitch_parselmouth(audio.numpy()[0], hparams=config,
                                        interp_uv=True, length=len(mel[0].T))
 
         if f0 is None:
-            print('error:file_', str(pathslist[0]),'_can not get_pitch ')
+            print('error:file_', str(pathslist[0]), '_can not get_pitch ')
             return None
         pathslist[1].mkdir(parents=True, exist_ok=True)
         np.savez(pathslist[2], audio=audio[0].numpy(), mel=mel[0].T, f0=f0, uv=uv)
@@ -106,12 +108,27 @@ def runx(config, num_cpu, strx):
     outstr = ''
     for i in crash_list:
         outstr = outstr + i
-    cpx = outstr.split('\n', valn)
-    trainx = cpx[-1]
-    valx = cpx[:-1]
-    val1 = ''
-    for i in valx:
-        val1 = val1 + i + '\n'
+    if config['shuff_val']:
+        val1 = ''
+        trainx = ''
+        feil_list = outstr.strip().split('\n')
+        validx = random.shuffle([i for i in range(len(feil_list))])[:valn]
+        for i in validx:
+            val1 = val1 + feil_list[i] + '\n'
+        for idx, i in enumerate(feil_list):
+            if idx in validx:
+                continue
+            trainx = trainx + i + '\n'
+
+
+    else:
+
+        cpx = outstr.split('\n', valn)
+        trainx = cpx[-1]
+        valx = cpx[:-1]
+        val1 = ''
+        for i in valx:
+            val1 = val1 + i + '\n'
     with open(outp / trainp, 'w', encoding='utf8') as f:
         f.write(trainx)
     with open(outp / valp, 'w', encoding='utf8') as f:

@@ -21,6 +21,7 @@ from utils.wav2mel import PitchAdjustableMelSpectrogram
 def dynamic_range_compression_torch(x, C=1, clip_val=1e-9):
     return torch.log(torch.clamp(x, min=clip_val) * C)
 
+
 def wav_aug(wav, hop_size, speed=1):
     orig_freq = int(np.round(hop_size * speed))
     new_freq = hop_size
@@ -60,16 +61,16 @@ def wav2spec(warp):
                 Q.put(str(pathslist[2]))
                 break
         for i in range(int(config['aug_num'])):
-            speed = random.uniform(config['aug_min'],config['aug_max'])
+            speed = random.uniform(config['aug_min'], config['aug_max'])
             audiox = wav_aug(audio, config["hop_size"], speed=speed)
             mel = dynamic_range_compression_torch(mel_spec_transform(audiox))
             f0, uv = get_pitch_parselmouth(audio.numpy()[0], hparams=config, speed=speed,
                                            interp_uv=True, length=len(mel[0].T))
             f0 *= speed
-            np.savez(str(pathslist[2])[:-4]+f'_{str(i)}.npz', audio=audiox[0].numpy(), mel=mel[0].T, f0=f0, uv=uv)
+            np.savez(str(pathslist[2])[:-4] + f'_{str(i)}.npz', audio=audiox[0].numpy(), mel=mel[0].T, f0=f0, uv=uv)
             while True:
                 if not Q.full():
-                    Q.put(str(str(pathslist[2])[:-4]+f'_{str(i)}.npz'))
+                    Q.put(str(str(pathslist[2])[:-4] + f'_{str(i)}.npz'))
                     break
 
 
@@ -126,10 +127,27 @@ def runx(config, num_cpu, strx):
     outstr = ''
     for i in crash_list:
         outstr = outstr + i
-    cpx = outstr.split('\n', valn)
-    trainx = cpx[-1]
-    valx = cpx[:-1]
-    val1 = ''
+    if config['shuff_val']:
+        val1 = ''
+        trainx = ''
+        feil_list = outstr.strip().split('\n')
+        validx = random.shuffle([i for i in range(len(feil_list))])[:valn]
+        for i in validx:
+            val1 = val1 + feil_list[i] + '\n'
+        for idx, i in enumerate(feil_list):
+            if idx in validx:
+                continue
+            trainx = trainx + i + '\n'
+
+
+    else:
+
+        cpx = outstr.split('\n', valn)
+        trainx = cpx[-1]
+        valx = cpx[:-1]
+        val1 = ''
+        for i in valx:
+            val1 = val1 + i + '\n'
     for i in valx:
         val1 = val1 + i + '\n'
     with open(outp / trainp, 'w', encoding='utf8') as f:
