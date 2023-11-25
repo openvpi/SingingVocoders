@@ -7,7 +7,10 @@ A collection of neural vocoders suitable for singing voice synthesis tasks.
 
 
 The following configuration items are what you need to change during preprocessing
-
+If you want to randomise val, please add the following configurations
+```angular2html
+shuff_val: true
+```
 ```angular2html
 
 data_input_path: []  the path for your data

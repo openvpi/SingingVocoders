@@ -8,6 +8,10 @@ A collection of neural vocoders suitable for singing voice synthesis tasks.
 
 python [process.py](process.py) --config 配置文件 --num_cpu 并行数量 --strx 1 代表 强制绝对路径 0 代表相对路径
 
+如果想要随机抽取val请添加以下配置项
+```angular2html
+shuff_val: true
+```
 
 和预处理有关的配置文件
 ```
