@@ -17,7 +17,8 @@ class HiFiloss(nn.Module):
                                                  f_max=config['fmax_for_loss'],
                                                  n_mels=config['audio_num_mel_bins'], )
         self.L1loss = nn.L1Loss()
-        self.lab_aux_mel_loss = config.get('lab_aux_melloss', 45)
+        self.lab_aux_loss = config.get('lab_aux_loss', 45)
+        self.lab_aux_mel_loss = config.get('lab_aux_melloss', self.lab_aux_loss)
         self.lab_aux_stft_loss = config.get('lab_aux_stftloss', 2.5)
         if config.get('use_stftloss', False):
             self.stft = warp_stft({'fft_sizes': config['loss_fft_sizes'], 'hop_sizes': config['loss_hop_sizes'],
