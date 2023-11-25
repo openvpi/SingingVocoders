@@ -106,7 +106,7 @@ python export_ckpt.py --exp_name (your ckpt name)  --save_path (output ckpt path
 
 微调请使用 [ft_hifigan.yaml](configs%2Fft_hifigan.yaml)
 
-微调功能使用请参考 openvpi/diffsinger 项目文档
+微调功能使用请参考 openvpi/diffsinger [项目文档](https://github.com/openvpi/DiffSinger/blob/main/docs/BestPractices.md#fine-tuning-and-parameter-freezing)
 
 不要使用bf16训练模型, 它可能导致音质问题
 

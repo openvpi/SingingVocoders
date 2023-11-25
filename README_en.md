@@ -75,7 +75,7 @@ Because of some problems the actual number of steps is half of what he shows
 
 If you need to fine-tune the vocoder suggests using the [ft_hifigan.yaml](configs%2Fft_hifigan.yaml) 
 
-How to use the fine-tuning function is recommended to refer to the openvpi/diffsinger project documentation
+How to use the fine-tuning function is recommended to refer to the openvpi/diffsinger project documentation[project documentation](https://github.com/openvpi/DiffSinger/blob/main/docs/BestPractices.md#fine-tuning-and-parameter-freezing)
 
 A small number of steps of fine-tuning can freeze the mpd module.
 
