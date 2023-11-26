@@ -1,6 +1,24 @@
 # preprocessing
 base_config:
   - configs/base_hifi.yaml
+
+
+
+
+
+data_input_path: []
+data_out_path: []
+val_num: 1
+f0_min: 65
+f0_max: 1100
+aug_min: 0.9
+aug_max: 1.4
+aug_num: 1
+
+key_aug: false
+key_aug_prob: 0.5
+
+shuff_val: false
 raw_data_dir: []
 binary_data_dir: null
 binarization_args:
