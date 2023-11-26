@@ -32,10 +32,6 @@ val_num: 5 # This is the number of valves you want.
 
  # (Normally, there are only these three to change.)
 ```
-If you want to randomly select data as the validation set, please add the following configuration item
-```angular2html
-shuff_val: true
-```
 
 ## Training
 Run the following training script

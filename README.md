@@ -5,15 +5,9 @@ A collection of neural vocoders suitable for singing voice synthesis tasks.
 ## If you have any questions, please open an issue.
 
 # 预处理 
-
 python [process.py](process.py) --config 配置文件 --num_cpu 并行数量 --strx 1 代表 强制绝对路径 0 代表相对路径
 
-如果想要随机抽取数据作为验证集请添加以下配置项
-```angular2html
-shuff_val: true
-```
-
-和预处理有关的配置文件
+和预处理有关的配置文件项
 ```
 DataIndexPath: dataX11  这个是训练数据 index 的位置预处理会自动生成
 
