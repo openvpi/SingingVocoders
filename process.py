@@ -14,7 +14,7 @@ from tqdm import tqdm
 from utils.config_utils import read_full_config, print_config
 from multiprocessing import Process, Queue
 
-from utils.wav2F0 import get_pitch
+from utils.wav2F0 import get_pitch_parselmouth
 from utils.wav2mel import PitchAdjustableMelSpectrogram
 
 
@@ -41,7 +41,9 @@ def wav2spec(warp):
                   f'_audio_sample_rate is {str(sr)} not {str(config["audio_sample_rate"])}')
             return None
         mel = dynamic_range_compression_torch(mel_spec_transform(audio))
-        f0, uv = get_pitch(audio.numpy()[0], hparams=config, interp_uv=True, length=len(mel[0].T))
+        f0, uv = get_pitch_parselmouth(audio.numpy()[0], hparams=config,
+                                       interp_uv=True, length=len(mel[0].T))
+
         if f0 is None:
             print('error:file_', str(pathslist[0]), '_can not get_pitch ')
             return None
@@ -93,45 +95,23 @@ def runx(config, num_cpu, strx):
     in_path_list = config['data_input_path']
     out_path_list = config['data_out_path']
     assert len(in_path_list) == len(out_path_list), 'path list can not match'
-    crash_list = []
+    data_filename_set = set()
     for inpath, outpath in tqdm(zip(in_path_list, out_path_list)):
         outlist = preprocess(config=config, input_path=inpath, output_path=outpath, num_cpu=num_cpu, st_path=strx)
-        crash_list.append(outlist)
+        data_filename_set.update(outlist)
     outp = pathlib.Path(config['DataIndexPath'])
     assert not outp.exists() or outp.is_dir(), f'Path \'{outp}\' is not a directory.'
     outp.mkdir(parents=True, exist_ok=True)
-    trainp = config['train_set_name']
-    valp = config['valid_set_name']
-    valn = config['val_num']
-    outstr = ''
-    for i in crash_list:
-        outstr = outstr + i
-    if config['shuff_val']:
-        val1 = ''
-        trainx = ''
-        feil_list = outstr.strip().split('\n')
-        # validx = random.shuffle()[:valn]
-        validx=random.choices([i for i in range(len(feil_list))],k=valn)
-        for i in validx:
-            val1 = val1 + feil_list[i] + '\n'
-        for idx, i in enumerate(feil_list):
-            if idx in validx:
-                continue
-            trainx = trainx + i + '\n'
+    train_name = config['train_set_name']
+    val_name = config['valid_set_name']
+    val_num = config['val_num']
 
-
-    else:
-
-        cpx = outstr.split('\n', valn)
-        trainx = cpx[-1]
-        valx = cpx[:-1]
-        val1 = ''
-        for i in valx:
-            val1 = val1 + i + '\n'
-    with open(outp / trainp, 'w', encoding='utf8') as f:
-        f.write(trainx)
-    with open(outp / valp, 'w', encoding='utf8') as f:
-        f.write(val1)
+    val_set = random.sample(data_filename_set, val_num)
+    train_set = data_filename_set - set(val_set)
+    with open(outp / train_name, 'w', encoding='utf8') as f:
+        [print(p, file=f) for p in sorted(train_set)]
+    with open(outp / val_name, 'w', encoding='utf8') as f:
+        [print(p, file=f) for p in sorted(val_set)]
 
 
 def preprocess(config, input_path, output_path, num_cpu, st_path):
@@ -170,22 +150,16 @@ def preprocess(config, input_path, output_path, num_cpu, st_path):
 
     t1.start()
 
-    indexlist = ''
+    filenames = []
 
     while True:
         if not Q.empty():
             value = Q.get()
             if value == '????task_end?????':
                 break
-            indexlist = indexlist + value + '\n'
+            filenames.append(value)
 
-    # if output_name is not None:
-    #     opf=crash_data/f'{output_name}.vcidx_crh'
-    # else:
-    #     opf=crash_data /f'{str(time.strftime("%Y%m%d%H%M%S", time.localtime()))}.vcidx_crh'
-    # with open(opf,'w',encoding='utf-8') as f:
-    #     f.write(indexlist)
-    return indexlist
+    return filenames
 
 
 if __name__ == '__main__':

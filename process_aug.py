@@ -117,40 +117,23 @@ def runx(config, num_cpu, strx):
         crash_list.append(outlist)
     outp = pathlib.Path(config['DataIndexPath'])
     assert not outp.exists() or outp.is_dir(), f'Path \'{outp}\' is not a directory.'
+    data_filename_set = set()
+    for inpath, outpath in tqdm(zip(in_path_list, out_path_list)):
+        outlist = preprocess(config=config, input_path=inpath, output_path=outpath, num_cpu=num_cpu, st_path=strx)
+        data_filename_set.update(outlist)
+    outp = pathlib.Path(config['DataIndexPath'])
+    assert not outp.exists() or outp.is_dir(), f'Path \'{outp}\' is not a directory.'
     outp.mkdir(parents=True, exist_ok=True)
-    trainp = config['train_set_name']
-    valp = config['valid_set_name']
-    valn = config['val_num']
-    outstr = ''
-    for i in crash_list:
-        outstr = outstr + i
-    if config['shuff_val']:
-        val1 = ''
-        trainx = ''
-        feil_list = outstr.strip().split('\n')
-        validx = random.shuffle([i for i in range(len(feil_list))])[:valn]
-        for i in validx:
-            val1 = val1 + feil_list[i] + '\n'
-        for idx, i in enumerate(feil_list):
-            if idx in validx:
-                continue
-            trainx = trainx + i + '\n'
+    train_name = config['train_set_name']
+    val_name = config['valid_set_name']
+    val_num = config['val_num']
 
-
-    else:
-
-        cpx = outstr.split('\n', valn)
-        trainx = cpx[-1]
-        valx = cpx[:-1]
-        val1 = ''
-        for i in valx:
-            val1 = val1 + i + '\n'
-    for i in valx:
-        val1 = val1 + i + '\n'
-    with open(outp / trainp, 'w', encoding='utf8') as f:
-        f.write(trainx)
-    with open(outp / valp, 'w', encoding='utf8') as f:
-        f.write(val1)
+    val_set = random.sample(data_filename_set, val_num)
+    train_set = data_filename_set - set(val_set)
+    with open(outp / train_name, 'w', encoding='utf8') as f:
+        [print(p, file=f) for p in sorted(train_set)]
+    with open(outp / val_name, 'w', encoding='utf8') as f:
+        [print(p, file=f) for p in sorted(val_set)]
 
 
 def preprocess(config, input_path, output_path, num_cpu, st_path):
@@ -189,22 +172,16 @@ def preprocess(config, input_path, output_path, num_cpu, st_path):
 
     t1.start()
 
-    indexlist = ''
+    filenames = []
 
     while True:
         if not Q.empty():
             value = Q.get()
             if value == '????task_end?????':
                 break
-            indexlist = indexlist + value + '\n'
+            filenames.append(value)
 
-    # if output_name is not None:
-    #     opf=crash_data/f'{output_name}.vcidx_crh'
-    # else:
-    #     opf=crash_data /f'{str(time.strftime("%Y%m%d%H%M%S", time.localtime()))}.vcidx_crh'
-    # with open(opf,'w',encoding='utf-8') as f:
-    #     f.write(indexlist)
-    return indexlist
+    return filenames
 
 
 if __name__ == '__main__':
