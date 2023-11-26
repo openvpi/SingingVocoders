@@ -14,7 +14,7 @@ from tqdm import tqdm
 from utils.config_utils import read_full_config, print_config
 from multiprocessing import Process, Queue
 
-from utils.wav2F0 import get_pitch_parselmouth
+from utils.wav2F0 import get_pitch
 from utils.wav2mel import PitchAdjustableMelSpectrogram
 
 
@@ -41,9 +41,7 @@ def wav2spec(warp):
                   f'_audio_sample_rate is {str(sr)} not {str(config["audio_sample_rate"])}')
             return None
         mel = dynamic_range_compression_torch(mel_spec_transform(audio))
-        f0, uv = get_pitch_parselmouth(audio.numpy()[0], hparams=config,
-                                       interp_uv=True, length=len(mel[0].T))
-
+        f0, uv = get_pitch(audio.numpy()[0], hparams=config, interp_uv=True, length=len(mel[0].T))
         if f0 is None:
             print('error:file_', str(pathslist[0]), '_can not get_pitch ')
             return None
