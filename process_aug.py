@@ -14,7 +14,7 @@ from tqdm import tqdm
 from utils.config_utils import read_full_config, print_config
 from multiprocessing import Process, Queue
 
-from utils.wav2F0 import get_pitch_parselmouth
+from utils.wav2F0 import get_pitch
 from utils.wav2mel import PitchAdjustableMelSpectrogram
 
 
@@ -47,9 +47,7 @@ def wav2spec(warp):
             return None
 
         mel = dynamic_range_compression_torch(mel_spec_transform(audio))
-        f0, uv = get_pitch_parselmouth(audio.numpy()[0], hparams=config,
-                                       interp_uv=True, length=len(mel[0].T))
-
+        f0, uv = get_pitch(audio.numpy()[0], hparams=config, interp_uv=True, length=len(mel[0].T))
         if f0 is None:
             print('error:', str(pathslist[0]))
             return None
@@ -64,8 +62,7 @@ def wav2spec(warp):
             speed = random.uniform(config['aug_min'], config['aug_max'])
             audiox = wav_aug(audio, config["hop_size"], speed=speed)
             mel = dynamic_range_compression_torch(mel_spec_transform(audiox))
-            f0, uv = get_pitch_parselmouth(audio.numpy()[0], hparams=config, speed=speed,
-                                           interp_uv=True, length=len(mel[0].T))
+            f0, uv = get_pitch(audio.numpy()[0], hparams=config, speed=speed, interp_uv=True, length=len(mel[0].T))
             f0 *= speed
             np.savez(str(pathslist[2])[:-4] + f'_{str(i)}.npz', audio=audiox[0].numpy(), mel=mel[0].T, f0=f0, uv=uv)
             while True:

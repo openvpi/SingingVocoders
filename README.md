@@ -8,7 +8,7 @@ A collection of neural vocoders suitable for singing voice synthesis tasks.
 
 python [process.py](process.py) --config 配置文件 --num_cpu 并行数量 --strx 1 代表 强制绝对路径 0 代表相对路径
 
-如果想要随机抽取val请添加以下配置项
+如果想要随机抽取数据作为验证集请添加以下配置项
 ```angular2html
 shuff_val: true
 ```
@@ -70,7 +70,7 @@ python [export_ckpt.py](export_ckpt.py) --exp_name ckpt名字  --save_path 导�
 
 如果你需要微调社区声码器权重建议使用[ft_hifigan.yaml](configs%2Fft_hifigan.yaml) 配置文件
 
-如何使用微调功能建议参考 openvpi/diffsinger 项目文档
+如何使用微调功能建议参考 openvpi/diffsinger [项目文档](https://github.com/openvpi/DiffSinger/blob/main/docs/BestPractices.md#fine-tuning-and-parameter-freezing)
 
 少量步数的微调可以冻结 mpd 模块
 
@@ -94,24 +94,18 @@ val_num: 1 这个是在验证的时候 抽取的音频文件数量
 然后执行预处理
 ```angular2html
 python process.py --config (your config path) --num_cpu (Number of cpu threads used in preprocessing)  --strx (1 for a forced absolute path 0 for a relative path)
-
 ```
 ## 训练
 ```angular2html
 python train.py --config (your config path) --exp_name (your ckpt name) --work_dir Working catalogue (optional)
-
 ```
 测试中的配置项
 ```angular2html
-
-use_stftloss: false  启用stft loss
-
-
-
+use_stftloss: false  是否启用stft loss
 lab_aux_melloss: 45
 lab_aux_stftloss: 2.5 两种loss的混合控制
 ```
-如果有其他需要可以修改base_hifi.yaml 的stftloss相关参数
+如果有其他需要可以修改 base_hifi.yaml 的 stftloss 相关参数
 ## 导出
 ```angular2html
 python export_ckpt.py --exp_name (your ckpt name)  --save_path (output ckpt path) --work_dir Working catalogue (optional)
@@ -123,45 +117,10 @@ python export_ckpt.py --exp_name (your ckpt name)  --save_path (output ckpt path
 
 微调功能使用请参考 openvpi/diffsinger [项目文档](https://github.com/openvpi/DiffSinger/blob/main/docs/BestPractices.md#fine-tuning-and-parameter-freezing)
 
+配置文件中配置项的继承关系为: [base.yaml](configs%2Fbase.yaml) -> [base_hifi.yaml](configs%2Fbase_hifi.yaml) -> [ft_hifigan.yaml](configs%2Fft_hifigan.yaml)
+
 不要使用bf16训练模型, 它可能导致音质问题
 
 2000 步左右即可微调完成 (显示的是4000步)
 
 冻结 mpd 模块可能可以有更好的结果
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

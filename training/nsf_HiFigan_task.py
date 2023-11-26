@@ -26,7 +26,7 @@ from utils.training_utils import (
     DsBatchSampler, DsEvalBatchSampler,
     get_latest_checkpoint_path
 )
-from utils.wav2F0 import get_pitch_parselmouth
+from utils.wav2F0 import get_pitch
 from utils.wav2mel import PitchAdjustableMelSpectrogram
 def spec_to_figure(spec, vmin=None, vmax=None):
     if isinstance(spec, torch.Tensor):
@@ -85,8 +85,7 @@ class nsf_HiFigan_dataset(Dataset):
                 speed = random.uniform(self.config['aug_min'], self.config['aug_max'])
                 audiox = wav_aug(audio, self.config["hop_size"], speed=speed)
                 mel = dynamic_range_compression_torch(self.mel_spec_transform(audiox[None,:]))
-                f0, uv = get_pitch_parselmouth(audio.numpy(), hparams=self.config, speed=speed,
-                                               interp_uv=True, length=len(mel[0].T))
+                f0, uv = get_pitch(audio.numpy(), hparams=self.config, speed=speed, interp_uv=True, length=len(mel[0].T))
                 if f0 is None:
                     return {'f0': data['f0'], 'spectrogram': data['mel'], 'audio': data['audio']}
                 f0 *= speed
