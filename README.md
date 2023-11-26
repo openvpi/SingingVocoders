@@ -79,6 +79,7 @@ python [export_ckpt.py](export_ckpt.py) --exp_name ckpt名字  --save_path 导�
 少量数据差不多 2000 步就可以微调完成
 
 # 快速开始
+
 ## 预处理
 以下是你需要根据自己的数据集修改的配置项
 ```angular2html
@@ -89,8 +90,6 @@ data_out_path: [] 此列表 预处理输出的npz文件的路径
 
 val_num: 1 这个是在验证的时候 抽取的音频文件数量
 ```
-建议在 [base.yaml](configs%2Fbase.yaml) 中修改
-
 然后执行预处理
 ```angular2html
 python process.py --config (your config path) --num_cpu (Number of cpu threads used in preprocessing)  --strx (1 for a forced absolute path 0 for a relative path)
@@ -105,7 +104,7 @@ use_stftloss: false  是否启用stft loss
 lab_aux_melloss: 45
 lab_aux_stftloss: 2.5 两种loss的混合控制
 ```
-如果有其他需要可以修改 base_hifi.yaml 的 stftloss 相关参数
+如果有其他需要可以修改 stftloss 的其他相关参数
 ## 导出
 ```angular2html
 python export_ckpt.py --exp_name (your ckpt name)  --save_path (output ckpt path) --work_dir Working catalogue (optional)

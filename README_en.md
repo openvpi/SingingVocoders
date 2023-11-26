@@ -4,14 +4,16 @@ A collection of neural vocoders suitable for singing voice synthesis tasks.
 # Quick Start
 
 ## Preprocessing
-
+Run the following preprocessing script
+```angular2html
+python process.py --config (your config path) --num_cpu (Number of cpu threads used in preprocessing)  --strx (1 for a forced absolute path 0 for a relative path)
+```
 The following configuration items are what you need to change during preprocessing
-
 ```angular2html
 
 data_input_path: []  the path for your data
 
-data_out_path: [] the path for preprocess out put
+data_out_path: [] the path for the preprocessed output
 
 val_num: 1 the number of validation audio
 ```
@@ -26,16 +28,9 @@ val_num: 5 # This is the number of valves you want.
 
  # (The paths in the two lists are one-to-one, so the number should be the same.)
 
-
  # (Then, the preprocessor scans all .wav files, including subfolders.)
 
  # (Normally, there are only these three to change.)
-```
-It is recommended to modify it in [base.yaml](configs%2Fbase.yaml),
-then run the following preprocessing script
-```angular2html
-python process.py --config (your config path) --num_cpu (Number of cpu threads used in preprocessing)  --strx (1 for a forced absolute path 0 for a relative path)
-
 ```
 If you want to randomly select data as the validation set, please add the following configuration item
 ```angular2html
@@ -53,7 +48,7 @@ use_stftloss: false  (Whether to use stft loss)
 lab_aux_melloss: 45
 lab_aux_stftloss: 2.5 (The mixing ratio of the two losses)
 ```
-If you have other needs, you can modify the stftloss related parameters of [base_hifi.yaml](configs%2Fbase_hifi.yaml)
+If you have other needs, you can modify the stftloss related parameters
 
 ## Export the checkpoint
 if you finish training you can use this script to export the diffsinger vocoder checkpoint
