@@ -16,8 +16,15 @@ key_aug: false
 key_aug_prob: 0.5
 
 shuff_val: false
-raw_data_dir: []
 
+use_stftloss: false
+loss_fft_sizes: [2048, 2048, 4096, 1024, 512, 256, 128,1024, 2048, 512]
+loss_hop_sizes: [512, 240, 480, 100, 50, 25, 12,120, 240, 50]
+loss_win_lengths: [2048, 1200, 2400, 480, 240, 120, 60,600, 1200, 240]
+lab_aux_melloss: 45
+lab_aux_stftloss: 2.5
+
+raw_data_dir: []
 binary_data_dir: null
 binarization_args:
   num_workers: 8
