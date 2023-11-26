@@ -110,7 +110,8 @@ def runx(config, num_cpu, strx):
         val1 = ''
         trainx = ''
         feil_list = outstr.strip().split('\n')
-        validx = random.shuffle([i for i in range(len(feil_list))])[:valn]
+        # validx = random.shuffle()[:valn]
+        validx=random.choices([i for i in range(len(feil_list))],k=valn)
         for i in validx:
             val1 = val1 + feil_list[i] + '\n'
         for idx, i in enumerate(feil_list):
