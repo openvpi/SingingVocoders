@@ -67,8 +67,8 @@ class univloss(nn.Module):
         gen_losses = []
         mrd_losses=0
         mpd_losses = 0
-        (mrd_out, Fmrd_featrue), (mpd_out, Fmpd_featrue)=GDfake
-        (_, Tmrd_featrue), (_, Tmpd_featrue) = GDtrue
+        (mrd_out, Fmrd_feature), (mpd_out, Fmpd_feature)=GDfake
+        (_, Tmrd_feature), (_, Tmpd_feature) = GDtrue
         for dg in mrd_out:
             l = torch.mean((1 - dg) ** 2)
             gen_losses.append(l.item())
@@ -81,13 +81,13 @@ class univloss(nn.Module):
             # loss += l
             mpd_losses=l+mpd_losses
 
-        mrd_featrue_loss=self.feature_loss(Tmrd_featrue,Fmrd_featrue)
-        mpd_featrue_loss = self.feature_loss(Tmpd_featrue, Fmpd_featrue)
-        # loss +=msd_featrue_loss
-        # loss +=mpd_featrue_loss
-        loss= mrd_featrue_loss+mpd_featrue_loss+mpd_losses+mrd_losses
-        # (msd_losses, mpd_losses), (msd_featrue_loss, mpd_featrue_loss), gen_losses
-        return loss, {'Gmrdloss':mrd_losses,'Gmpdloss':mpd_losses,'Gmrd_featrue_loss':mrd_featrue_loss,'Dmpd_featrue_loss':mpd_featrue_loss}
+        mrd_feature_loss=self.feature_loss(Tmrd_feature,Fmrd_feature)
+        mpd_feature_loss = self.feature_loss(Tmpd_feature, Fmpd_feature)
+        # loss +=msd_feature_loss
+        # loss +=mpd_feature_loss
+        loss= mrd_feature_loss+mpd_feature_loss+mpd_losses+mrd_losses
+        # (msd_losses, mpd_losses), (msd_feature_loss, mpd_feature_loss), gen_losses
+        return loss, {'Gmrdloss':mrd_losses,'Gmpdloss':mpd_losses,'Gmrd_feature_loss':mrd_feature_loss,'Gmpd_feature_loss':mpd_feature_loss}
 
     # def Auxloss(self,Goutput, sample):
     #

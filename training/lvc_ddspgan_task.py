@@ -211,9 +211,9 @@ class ddspgan_task(GanBaseTask):
         return {'audio':wav}
 
     def Dforward(self, Goutput):
-        msd_out,msd_featrue=self.discriminator['msd'](Goutput)
-        mpd_out,mpd_featrue=self.discriminator['mpd'](Goutput)
-        return (msd_out,msd_featrue),(mpd_out,mpd_featrue)
+        msd_out,msd_feature=self.discriminator['msd'](Goutput)
+        mpd_out,mpd_feature=self.discriminator['mpd'](Goutput)
+        return (msd_out,msd_feature),(mpd_out,mpd_feature)
 
     # def _training_step(self, sample, batch_idx):
     #     """
@@ -223,34 +223,34 @@ class ddspgan_task(GanBaseTask):
     #
     #     log_diet = {}
     #     opt_g, opt_d = self.optimizers()
-    #     # foeward generator start
-    #     Goutpt = self.Gforward(sample=sample)  #y_g_hat =Goutpt
-    #     # foeward generator start
+    #     # forward generator start
+    #     Goutput = self.Gforward(sample=sample)  #y_g_hat =Goutput
+    #     # forward generator start
     #
-    #     #foeward discriminator start
+    #     #forward discriminator start
     #
-    #     Dfake = self.Dforward(Goutput=Goutpt['audio'].detach()) #y_g_hat =Goutpt
+    #     Dfake = self.Dforward(Goutput=Goutput['audio'].detach()) #y_g_hat =Goutput
     #     Dtrue = self.Dforward(Goutput=sample['audio']) #y =sample['audio']
     #     Dloss, Dlog = self.mix_loss.Dloss(Dfake=Dfake, Dtrue=Dtrue)
     #     log_diet.update(Dlog)
-    #     # foeward discriminator end
+    #     # forward discriminator end
     #     #opt discriminator start
     #     opt_d.zero_grad()  #clean discriminator grad
     #     self.manual_backward(Dloss)
     #     opt_d.step()
     #     # opt discriminator end
     #     # opt generator start
-    #     GDfake = self.Dforward(Goutput=Goutpt['audio'])
+    #     GDfake = self.Dforward(Goutput=Goutput['audio'])
     #     GDtrue=self.Dforward(Goutput=sample['audio'])
     #     GDloss, GDlog = self.mix_loss.GDloss(GDfake=GDfake,GDtrue=GDtrue)
     #     log_diet.update(GDlog)
-    #     Auxloss, Auxlog = self.mix_loss.Auxloss(Goutput=Goutpt, sample=sample)
+    #     Auxloss, Auxlog = self.mix_loss.Auxloss(Goutput=Goutput, sample=sample)
     #
     #     log_diet.update(Auxlog)
-    #     Dlosss=GDloss + Auxloss
+    #     Gloss=GDloss + Auxloss
     #
     #     opt_g.zero_grad() #clean generator grad
-    #     self.manual_backward(Dlosss)
+    #     self.manual_backward(Gloss)
     #     opt_g.step()
     #     # opt generator end
     #     return log_diet

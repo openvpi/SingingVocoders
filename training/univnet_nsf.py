@@ -231,9 +231,9 @@ class nsf_univnet_task(GanBaseTask):
         return {'audio':wav,'nsfwav':nsfwav,}
 
     def Dforward(self, Goutput):
-        mrd_out,mrd_featrue=self.discriminator['mrd'](Goutput)
-        mpd_out,mpd_featrue=self.discriminator['mpd'](Goutput)
-        return (mrd_out,mrd_featrue),(mpd_out,mpd_featrue)
+        mrd_out,mrd_feature=self.discriminator['mrd'](Goutput)
+        mpd_out,mpd_feature=self.discriminator['mpd'](Goutput)
+        return (mrd_out,mrd_feature),(mpd_out,mpd_feature)
 
     def _training_step(self, sample, batch_idx):
         """
@@ -247,9 +247,9 @@ class nsf_univnet_task(GanBaseTask):
 
         log_diet = {}
         opt_g, opt_d = self.optimizers()
-        Goutpt = self.Gforward(sample=sample)
+        Goutput = self.Gforward(sample=sample)
         if not aux_only:
-            Dfake = self.Dforward(Goutput=Goutpt['audio'].detach())
+            Dfake = self.Dforward(Goutput=Goutput['audio'].detach())
             Dtrue = self.Dforward(Goutput=sample['audio'])
             Dloss, Dlog = self.mix_loss.Dloss(Dfake=Dfake, Dtrue=Dtrue)
             log_diet.update(Dlog)
@@ -263,25 +263,25 @@ class nsf_univnet_task(GanBaseTask):
             opt_d.step()
             opt_d.zero_grad()
         if not aux_only:
-            GDfake = self.Dforward(Goutput=Goutpt['audio'])
+            GDfake = self.Dforward(Goutput=Goutput['audio'])
             GDtrue=self.Dforward(Goutput=sample['audio'])
             GDloss, GDlog = self.mix_loss.GDloss(GDfake=GDfake,GDtrue=GDtrue)
             log_diet.update(GDlog)
-        Auxloss, Auxlog = self.mix_loss.Auxloss(Goutput=Goutpt, sample=sample,step=self.global_step//2)
+        Auxloss, Auxlog = self.mix_loss.Auxloss(Goutput=Goutput, sample=sample,step=self.global_step//2)
 
         log_diet.update(Auxlog)
         if not aux_only:
-            Dlosss=GDloss + Auxloss
+            Gloss=GDloss + Auxloss
         else:
-            Dlosss=Auxloss
+            Gloss=Auxloss
 
         # if self.clip_grad_norm is not None:
-        #     self.manual_backward(Dlosss / self.clip_grad_norm)
+        #     self.manual_backward(Gloss / self.clip_grad_norm)
         # else:
-        #     self.manual_backward(Dlosss)
+        #     self.manual_backward(Gloss)
         # if (batch_idx + 1) % self.accumulate_grad_batches == 0:
         opt_g.zero_grad()
-        self.manual_backward(Dlosss)
+        self.manual_backward(Gloss)
         if self.clip_grad_norm is not None:
             self.clip_gradients(opt_g, gradient_clip_val=self.clip_grad_norm, gradient_clip_algorithm="norm")
         opt_g.step()
