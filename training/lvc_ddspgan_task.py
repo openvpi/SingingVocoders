@@ -22,7 +22,7 @@ from models.nsf_HiFigan.models import Generator, AttrDict, MultiScaleDiscriminat
 from modules.loss.HiFiloss import HiFiloss
 from modules.loss.ddsploss import ddsploss
 from training.base_task_gan import GanBaseTask
-from utils.indexed_datasets import IndexedDataset
+# from utils.indexed_datasets import IndexedDataset
 from utils.training_utils import (
     DsBatchSampler, DsEvalBatchSampler,
     get_latest_checkpoint_path

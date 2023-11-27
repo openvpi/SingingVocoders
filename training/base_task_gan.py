@@ -15,7 +15,7 @@ from torch.utils.data import Dataset
 from torchmetrics import Metric, MeanMetric
 
 import utils
-from utils.indexed_datasets import IndexedDataset
+# from utils.indexed_datasets import IndexedDataset
 from utils.training_utils import (
     DsBatchSampler, DsEvalBatchSampler,
     get_latest_checkpoint_path
