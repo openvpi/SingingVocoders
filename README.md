@@ -4,6 +4,10 @@ A collection of neural vocoders suitable for singing voice synthesis tasks.
 # English version [README_en.md](README_en.md)
 ## If you have any questions, please open an issue.
 
+
+
+
+
 # 预处理 
 python [process.py](process.py) --config 配置文件 --num_cpu 并行数量 --strx 1 代表 强制绝对路径 0 代表相对路径
 
@@ -117,3 +121,8 @@ python export_ckpt.py --exp_name (your ckpt name)  --save_path (output ckpt path
 2000 步左右即可微调完成 (显示的是4000步)
 
 冻结 mpd 模块可能可以有更好的结果
+
+# 其它模型
+hifivae.yaml 训练vae模型
+
+base_hifi_chroma.yaml 训练忽略8度nsf
