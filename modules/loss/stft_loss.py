@@ -23,9 +23,9 @@ def stft(x, fft_size, hop_size, win_length, window):
         Tensor: Magnitude spectrogram (B, #frames, fft_size // 2 + 1).
 
     """
-    x_stft = torch.stft(x, fft_size, hop_size, win_length, window,return_complex=False)
-    real = x_stft[..., 0]
-    imag = x_stft[..., 1]
+    x_stft = torch.stft(x, fft_size, hop_size, win_length, window, return_complex=True)
+    real = x_stft.real
+    imag = x_stft.imag
 
     # NOTE(kan-bayashi): clamp is needed to avoid nan or inf
     return torch.sqrt(torch.clamp(real ** 2 + imag ** 2, min=1e-7)).transpose(2, 1)
@@ -115,6 +115,8 @@ class warp_stft:
 
     def loss(self,x, y):
         return self.stft(x, y)
+        
+        
 class MultiResolutionSTFTLoss(torch.nn.Module):
     """Multi resolution STFT loss module."""
 
@@ -154,7 +156,7 @@ class MultiResolutionSTFTLoss(torch.nn.Module):
         mag_loss = 0.0
         for f in self.stft_losses:
             # print( 'stft parameter device:', next(f.parameters()).device )
-            f=f.to(y.device)
+            f = f.to(y.device)
             sc_l, mag_l = f(x, y)
             sc_loss += sc_l
             mag_loss += mag_l
