@@ -111,12 +111,6 @@ def runx(config, num_cpu, strx):
     in_path_list = config['data_input_path']
     out_path_list = config['data_out_path']
     assert len(in_path_list) == len(out_path_list), 'path list can not match'
-    crash_list = []
-    for inpath, outpath in tqdm(zip(in_path_list, out_path_list)):
-        outlist = preprocess(config=config, input_path=inpath, output_path=outpath, num_cpu=num_cpu, st_path=strx)
-        crash_list.append(outlist)
-    outp = pathlib.Path(config['DataIndexPath'])
-    assert not outp.exists() or outp.is_dir(), f'Path \'{outp}\' is not a directory.'
     data_filename_set = set()
     for inpath, outpath in tqdm(zip(in_path_list, out_path_list)):
         outlist = preprocess(config=config, input_path=inpath, output_path=outpath, num_cpu=num_cpu, st_path=strx)
