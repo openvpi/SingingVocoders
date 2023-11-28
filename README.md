@@ -123,6 +123,18 @@ python export_ckpt.py --exp_name (your ckpt name)  --save_path (output ckpt path
 冻结 mpd 模块可能可以有更好的结果
 
 # 其它模型
-hifivae.yaml 训练vae模型
+[HiFivae.yaml](configs%2FHiFivae.yaml)hifivae.yaml 训练vae模型
 
-base_hifi_chroma.yaml 训练忽略8度nsf
+[base_hifi_chroma.yaml](configs%2Fbase_hifi_chroma.yaml) 训练忽略8度nsf hifigan
+
+[base_hifi.yaml](configs%2Fbase_hifi.yaml) 训练nsf hifigan
+
+[base_ddspgan.yaml](configs%2Fbase_ddspgan.yaml) 训练带鉴别器的ddsp模型
+
+[ddsp_univnet.yaml](configs%2Fddsp_univnet.yaml) 训练ddsp 混合univnet模型
+
+[nsf_univnet.yaml](configs%2Fnsf_univnet.yaml) 训练带nsf的univnet（推荐）
+
+[univnet.yaml](configs%2Funivnet.yaml) 训练原版univnet
+
+[lvc_base_ddspgan.yaml](configs%2Flvc_base_ddspgan.yaml) 训练使用lvc滤波器的 ddsp模型

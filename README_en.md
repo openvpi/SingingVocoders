@@ -86,3 +86,20 @@ A small number of steps of fine-tuning can freeze the mpd module.
 It is not recommended to use bf16, as it may cause sound quality problems.
 
 Almost 2k steps is enough for fine-tuning of small dataset.
+
+# Other models
+[HiFivae.yaml](configs%2FHiFivae.yaml) hifivae.yaml training vae model
+
+[base_hifi_chroma.yaml](configs%2Fbase_hifi_chroma.yaml) training ignore 8th degree nsf hifigan
+
+[base_hifi.yaml](configs%2Fbase_hifi.yaml) Training nsf hifigan
+
+[base_ddspgan.yaml](configs%2Fbase_ddspgan.yaml) Training ddsp model with discriminator
+
+[ddsp_univnet.yaml](configs%2Fddsp_univnet.yaml) Training ddsp mixed univnet model
+
+[nsf_univnet.yaml](configs%2Fnsf_univnet.yaml) Training univnet with nsf (recommended)
+
+[univnet.yaml](configs%2Funivnet.yaml) Training original univnet
+
+[lvc_base_ddspgan.yaml](configs%2Flvc_base_ddspgan.yaml) Training ddsp model with lvc filters
