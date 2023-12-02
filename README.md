@@ -60,7 +60,7 @@ aug_max: 1.4 最大变调倍数
 python [train.py](train.py) --config 配置文件 --exp_name ckpt名字 --work_dir 工作目录（可选）
 
 # 导出
-python [export_ckpt.py](export_ckpt.py) --exp_name ckpt名字  --save_path 导出的ckpt --work_dir 工作目录（可选） 
+python [export_ckpt.py](export_ckpt.py) --ckpt_path ckpt路径  --save_path 导出的ckpt路径 --work_dir 工作目录（可选） 
 
 # 注意
 
@@ -105,7 +105,7 @@ lab_aux_stftloss: 2.5 两种loss的混合控制
 如果有其他需要可以修改 stftloss 的其他相关参数
 ## 导出
 ```angular2html
-python export_ckpt.py --exp_name (your ckpt name)  --save_path (output ckpt path) --work_dir Working catalogue (optional)
+python export_ckpt.py --ckpt_path (your ckpt path)  --save_path (output ckpt path) --work_dir Working catalogue (optional)
 ```
 # 注意事项
 实际步数是显示的一半

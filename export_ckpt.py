@@ -14,7 +14,7 @@ from utils import get_latest_checkpoint_path
 @click.option('--work_dir', required=False, metavar='DIR', help='Working directory containing the experiments')
 def export(exp_name, ckpt_path, save_path, work_dir):
     # print_config(config)
-    if not exp_name is None and ckpt_path is None:
+    if exp_name is None and ckpt_path is None:
         raise RuntimeError('Either --exp_name or --ckpt_path should be specified.')
     if ckpt_path is None:
         if work_dir is None:

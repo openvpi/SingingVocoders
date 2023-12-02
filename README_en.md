@@ -49,7 +49,7 @@ If you have other needs, you can modify the stftloss related parameters
 ## Export the checkpoint
 if you finish training you can use this script to export the diffsinger vocoder checkpoint
 ```
-python export_ckpt.py --exp_name (your ckpt name)  --save_path (output ckpt path) --work_dir (working directory, optional)
+python export_ckpt.py --ckpt_path (your ckpt path)  --save_path (output ckpt path) --work_dir (working directory, optional)
 ```
 
 # Offline data augmentation
