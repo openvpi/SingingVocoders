@@ -75,7 +75,7 @@ Note that data augmentation may damage the sound quality!
 # Note
 Because of some problems the actual number of steps is half of what it shows
 
-To fine-tune the nsf-hifigan vocoder, please unzip the weights in [releases](https://github.com/openvpi/SingingVocoders/releases) and put them in the main directory, and use [ft_hifigan.yaml](configs%2Fft_hifigan. yaml)
+To fine-tune the nsf-hifigan vocoder, please unzip the weights in [releases](https://github.com/openvpi/SingingVocoders/releases) and put them in the main directory, and use [ft_hifigan.yaml](configs%2Fft_hifigan.yaml)
 
 How to use the fine-tuning function is recommended to refer to the openvpi/DiffSinger [project documentation](https://github.com/openvpi/DiffSinger/blob/main/docs/BestPractices.md#fine-tuning-and-parameter-freezing)
 
