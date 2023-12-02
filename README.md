@@ -114,7 +114,7 @@ python export_ckpt.py --ckpt_path (your ckpt path)  --save_path (output ckpt pat
 
 微调功能使用请参考 openvpi/DiffSinger [项目文档](https://github.com/openvpi/DiffSinger/blob/main/docs/BestPractices.md#fine-tuning-and-parameter-freezing)
 
-导出的权重可以在 [DDSP-SVC](https://github.com/yxlllc/DDSP-SVC), [Diffusion-Svc](https://github.com/CNChTu/Diffusion-SVC), [so-vits-svc](https://github.com/svc-develop-team/so-vits-svc) 和 [DiffSinger (openvpi)](https://github.com/openvpi/DiffSinger) 等项目中使用
+导出的权重可以在 [DDSP-SVC](https://github.com/yxlllc/DDSP-SVC), [Diffusion-SVC](https://github.com/CNChTu/Diffusion-SVC), [so-vits-svc](https://github.com/svc-develop-team/so-vits-svc) 和 [DiffSinger (openvpi)](https://github.com/openvpi/DiffSinger) 等项目中使用
 
 如果要进一步导出成在 [OpenUtau](https://github.com/stakira/OpenUtau) 中使用的 onnx 格式权重，请使用 [这个](https://github.com/openvpi/DiffSinger/blob/main/scripts/export.py) 脚本
 
