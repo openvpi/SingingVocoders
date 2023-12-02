@@ -27,12 +27,12 @@ def export(exp_name, ckpt_path, save_path, work_dir):
 
     ckp = {}
 
-    aaa2x = torch.load(ckpt_path)['state_dict']
-    for i in tqdm(aaa2x):
+    temp_dict = torch.load(ckpt_path)['state_dict']
+    for i in tqdm(temp_dict):
         i: str
         if 'generator.' in i:
             # print(i)
-            ckp[i.replace('generator.', '')] = aaa2x[i]
+            ckp[i.replace('generator.', '')] = temp_dict[i]
 
     torch.save({'generator': ckp}, save_path)
 
