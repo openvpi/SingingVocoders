@@ -110,9 +110,13 @@ python export_ckpt.py --ckpt_path (your ckpt path)  --save_path (output ckpt pat
 # 注意事项
 实际步数是显示的一半
 
-微调请使用 [ft_hifigan.yaml](configs%2Fft_hifigan.yaml)
+微调 nsf-hifigan 声码器请将 [releases](https://github.com/openvpi/SingingVocoders/releases) 中的权重解压后放至主目录下，并使用 [ft_hifigan.yaml](configs%2Fft_hifigan.yaml)
 
-微调功能使用请参考 openvpi/diffsinger [项目文档](https://github.com/openvpi/DiffSinger/blob/main/docs/BestPractices.md#fine-tuning-and-parameter-freezing)
+微调功能使用请参考 openvpi/DiffSinger [项目文档](https://github.com/openvpi/DiffSinger/blob/main/docs/BestPractices.md#fine-tuning-and-parameter-freezing)
+
+导出的权重可以在 [DDSP-SVC](https://github.com/yxlllc/DDSP-SVC), [Diffusion-Svc](https://github.com/CNChTu/Diffusion-SVC), [so-vits-svc](https://github.com/svc-develop-team/so-vits-svc) 和 [DiffSinger (openvpi)](https://github.com/openvpi/DiffSinger) 等项目中使用
+
+如果要进一步导出成在 [OpenUtau](https://github.com/stakira/OpenUtau) 中使用的 onnx 格式权重，请使用 [这个](https://github.com/openvpi/DiffSinger/blob/main/scripts/export.py) 脚本
 
 配置文件中配置项的继承关系为: [base.yaml](configs%2Fbase.yaml) -> [base_hifi.yaml](configs%2Fbase_hifi.yaml) -> [ft_hifigan.yaml](configs%2Fft_hifigan.yaml)
 

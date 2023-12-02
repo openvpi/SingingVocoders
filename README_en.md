@@ -75,11 +75,15 @@ Note that data augmentation may damage the sound quality!
 # Note
 Because of some problems the actual number of steps is half of what it shows
 
-If you need to fine-tune the vocoder suggests using the [ft_hifigan.yaml](configs%2Fft_hifigan.yaml) 
+To fine-tune the nsf-hifigan vocoder, please unzip the weights in [releases](https://github.com/openvpi/SingingVocoders/releases) and put them in the main directory, and use [ft_hifigan.yaml](configs%2Fft_hifigan. yaml)
+
+How to use the fine-tuning function is recommended to refer to the openvpi/DiffSinger [project documentation](https://github.com/openvpi/DiffSinger/blob/main/docs/BestPractices.md#fine-tuning-and-parameter-freezing)
+
+The exported weights can be used in project such as [DDSP-SVC](https://github.com/yxlllc/DDSP-SVC), [Diffusion-Svc](https://github.com/CNChTu/Diffusion-SVC), [so-vits-svc](https://github.com/svc-develop-team/so-vits-svc) and [DiffSinger (openvpi)](https://github.com/openvpi/DiffSinger)
+
+If you want to further export them to onnx format weights for use in [OpenUtau](https://github.com/stakira/OpenUtau), please use [this](https://github.com/openvpi/DiffSinger/blob/main/scripts/export.py) script
 
 The inheritance relationship of configuration items in the configuration file is: [base.yaml](configs%2Fbase.yaml) -> [base_hifi.yaml](configs%2Fbase_hifi.yaml) -> [ft_hifigan.yaml](configs%2Fft_hifigan.yaml)
-
-How to use the fine-tuning function is recommended to refer to the openvpi/diffsinger [project documentation](https://github.com/openvpi/DiffSinger/blob/main/docs/BestPractices.md#fine-tuning-and-parameter-freezing)
 
 A small number of steps of fine-tuning can freeze the mpd module.
 
