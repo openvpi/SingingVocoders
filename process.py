@@ -104,7 +104,7 @@ def runx(config, num_cpu, strx):
     val_name = config['valid_set_name']
     val_num = config['val_num']
 
-    val_set = random.sample(data_filename_set, val_num)
+    val_set = random.sample(tuple(data_filename_set), val_num)
     train_set = data_filename_set - set(val_set)
     with open(outp / train_name, 'w', encoding='utf8') as f:
         [print(p, file=f) for p in sorted(train_set)]
