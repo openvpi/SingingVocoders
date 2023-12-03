@@ -1,11 +1,11 @@
 import pathlib
-
+import json
 import click
 import torch
 from tqdm import tqdm
 
 from utils import get_latest_checkpoint_path
-
+from utils.config_utils import read_full_config, print_config
 
 @click.command(help='')
 @click.option('--exp_name', required=False, metavar='EXP', help='Name of the experiment')
@@ -24,18 +24,31 @@ def export(exp_name, ckpt_path, save_path, work_dir):
         work_dir = work_dir / exp_name
         assert not work_dir.exists() or work_dir.is_dir(), f'Path \'{work_dir}\' is not a directory.'
         ckpt_path = get_latest_checkpoint_path(work_dir)
-
-    ckp = {}
-
+    
+    ckpt = {}
     temp_dict = torch.load(ckpt_path)['state_dict']
     for i in tqdm(temp_dict):
         i: str
         if 'generator.' in i:
             # print(i)
-            ckp[i.replace('generator.', '')] = temp_dict[i]
-
-    torch.save({'generator': ckp}, save_path)
-
+            ckpt[i.replace('generator.', '')] = temp_dict[i]
+    torch.save({'generator': ckpt}, save_path)
+    print("Export checkpoint file successfully: ", save_path)
+    
+    config_file = pathlib.Path(ckpt_path).with_name('config.yaml')
+    config = read_full_config(config_file)
+    new_config_file = pathlib.Path(save_path).with_name('config.json')
+    with open(new_config_file, 'w') as json_file:
+        new_config = config['model_args']
+        new_config['sampling_rate'] = config['audio_sample_rate']
+        new_config['num_mels'] = config['audio_num_mel_bins']
+        new_config['hop_size'] = config['hop_size']
+        new_config['n_fft'] = config['fft_size']
+        new_config['win_size'] = config['win_size']
+        new_config['fmin'] = config['fmin']
+        new_config['fmax'] = config['fmax']
+        json_file.write(json.dumps(new_config, indent=1))
+        print("Export configuration file successfully: ", new_config_file)
 
 if __name__ == '__main__':
     export()
