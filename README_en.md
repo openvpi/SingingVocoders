@@ -1,6 +1,8 @@
 # SingingVocoders
 A collection of neural vocoders suitable for singing voice synthesis tasks.
 
+# If you have any questions, please open an issue.
+
 # Quick Start
 
 ## Preprocessing
