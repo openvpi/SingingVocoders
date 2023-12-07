@@ -142,7 +142,7 @@ pl_trainer_num_nodes: 1
 pl_trainer_strategy: 
   name: auto
   process_group_backend: nccl
-  find_unused_parameters: false
+  find_unused_parameters: true
 nccl_p2p: true
 seed: 114514
 
