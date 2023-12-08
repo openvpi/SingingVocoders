@@ -6,7 +6,13 @@ A collection of neural vocoders suitable for singing voice synthesis tasks.
 
 
 
-
+# 使用ddp
+```
+pl_trainer_strategy: 
+  name: ddp
+  process_group_backend: nccl
+  find_unused_parameters: true
+```
 
 # 预处理 
 python [process.py](process.py) --config 配置文件 --num_cpu 并行数量 --strx 1 代表 强制绝对路径 0 代表相对路径
