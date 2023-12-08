@@ -61,7 +61,7 @@ def train(config, exp_name, work_dir):
         accelerator=config['pl_trainer_accelerator'],
         devices=config['pl_trainer_devices'],
         num_nodes=config['pl_trainer_num_nodes'],
-        strategy=get_strategy(config['pl_trainer_strategy'],num_nodes=config['pl_trainer_num_nodes'],),
+        strategy=get_strategy(config['pl_trainer_strategy']),
         precision=config['pl_trainer_precision'],
         callbacks=[
             DsModelCheckpoint(
