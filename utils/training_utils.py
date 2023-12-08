@@ -11,7 +11,7 @@ from lightning.pytorch.callbacks import ModelCheckpoint, TQDMProgressBar
 from lightning.pytorch.utilities.rank_zero import rank_zero_info
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data.distributed import Sampler
-
+from lightning.pytorch.strategies import DDPStrategy
 import utils
 
 
@@ -304,8 +304,22 @@ class DsTQDMProgressBar(TQDMProgressBar):
         return items
 
 
-def get_strategy(strategy):
+def get_strategy(strategy,num_nodes):
     if strategy['name'] == 'auto':
+
+        def get_ddp_strategy(_backend):
+            if _backend == 'gloo':
+                return DDPStrategy(process_group_backend='gloo', find_unused_parameters=True)
+            elif _backend == 'nccl' or _backend == 'nccl_no_p2p':
+                return DDPStrategy(process_group_backend='nccl', find_unused_parameters=True)
+            else:
+                raise ValueError(f'backend {_backend} is not valid.')
+
+        _num_nodes_flag = int(num_nodes) if num_nodes is not None else 1
+        if _num_nodes_flag > 1:
+            return get_ddp_strategy(strategy['process_group_backend'])
+
+
         return 'auto'
 
     from lightning.pytorch.strategies import StrategyRegistry
