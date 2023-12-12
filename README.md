@@ -118,6 +118,8 @@ python export_ckpt.py --ckpt_path (your ckpt path)  --save_path (output ckpt pat
 
 微调 nsf-hifigan 声码器请将 [releases](https://github.com/openvpi/SingingVocoders/releases) 中的权重解压后放至主目录下，并使用 [ft_hifigan.yaml](configs%2Fft_hifigan.yaml)
 
+微调请使用 44100 Hz 采样率音频，并不要修改其他 mel 参数，除非你明确知道你在做什么
+
 微调功能使用请参考 openvpi/DiffSinger [项目文档](https://github.com/openvpi/DiffSinger/blob/main/docs/BestPractices.md#fine-tuning-and-parameter-freezing)
 
 导出的权重可以在 [DDSP-SVC](https://github.com/yxlllc/DDSP-SVC), [Diffusion-SVC](https://github.com/CNChTu/Diffusion-SVC), [so-vits-svc](https://github.com/svc-develop-team/so-vits-svc) 和 [DiffSinger (openvpi)](https://github.com/openvpi/DiffSinger) 等项目中使用

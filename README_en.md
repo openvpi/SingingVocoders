@@ -79,6 +79,8 @@ Because of some problems the actual number of steps is half of what it shows
 
 To fine-tune the nsf-hifigan vocoder, please unzip the weights in [releases](https://github.com/openvpi/SingingVocoders/releases) and put them in the main directory, and use [ft_hifigan.yaml](configs%2Fft_hifigan.yaml)
 
+For fine-tuning please use 44100 Hz samplerate audio and do not modify other mel parameters unless you know exactly what you are doing
+
 How to use the fine-tuning function is recommended to refer to the openvpi/DiffSinger [project documentation](https://github.com/openvpi/DiffSinger/blob/main/docs/BestPractices.md#fine-tuning-and-parameter-freezing)
 
 The exported weights can be used in project such as [DDSP-SVC](https://github.com/yxlllc/DDSP-SVC), [Diffusion-SVC](https://github.com/CNChTu/Diffusion-SVC), [so-vits-svc](https://github.com/svc-develop-team/so-vits-svc) and [DiffSinger (openvpi)](https://github.com/openvpi/DiffSinger)
