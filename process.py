@@ -45,6 +45,12 @@ def wav2spec(warp):
         if f0 is None:
             print('error:file_', str(pathslist[0]), '_can not get_pitch ')
             return None
+    except Exception as e:
+        print('error:', str(pathslist[0]), str(e))
+        return None
+
+    try:
+
         pathslist[1].mkdir(parents=True, exist_ok=True)
         np.savez(pathslist[2], audio=audio[0].numpy(), mel=mel[0].T, f0=f0, uv=uv)
 
@@ -53,8 +59,8 @@ def wav2spec(warp):
                 Q.put(str(pathslist[2]))
                 break
 
-    except:
-        print('error:', str(pathslist[0]))
+    except Exception as e:
+        print('error:', str(pathslist[0]), str(e))
         return None
 
 
