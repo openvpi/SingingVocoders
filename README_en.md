@@ -7,11 +7,11 @@ A collection of neural vocoders suitable for singing voice synthesis tasks.
 
 ## Preprocessing
 Run the following preprocessing script
-```angular2html
+```sh
 python process.py --config (your config path) --num_cpu (Number of cpu threads used in preprocessing)  --strx (1 for a forced absolute path 0 for a relative path)
 ```
 The following configuration items are what you need to change during preprocessing
-```angular2html
+```yaml
 
 data_input_path: []  the path for your data
 
@@ -20,7 +20,7 @@ data_out_path: [] the path for the preprocessed output
 val_num: 1 the number of validation audio
 ```
 An example
-```
+```yaml
 data_input_path: ['wav/in1','wav/in2'] 
 
 data_out_path: ['wav/out1','wav/out2']
@@ -37,11 +37,11 @@ val_num: 5 # This is the number of valves you want.
 
 ## Training
 Run the following training script
-```angular2html
+```sh
 python train.py --config (your config path) --exp_name (your ckpt name) --work_dir (working directory, optional)
 ```
 Configuration items under test
-```angular2html
+```yaml
 use_stftloss: false  (Whether to use stft loss)
 lab_aux_melloss: 45
 lab_aux_stftloss: 2.5 (The mixing ratio of the two losses)
@@ -50,13 +50,13 @@ If you have other needs, you can modify the stftloss related parameters
 
 ## Export the checkpoint
 if you finish training you can use this script to export the diffsinger vocoder checkpoint
-```
+```sh
 python export_ckpt.py --ckpt_path (your ckpt path)  --save_path (output ckpt path) --work_dir (working directory, optional)
 ```
 
 # Offline data augmentation
 Replace the preprocessing script with [process_aug.py](process_aug.py) and add configuration entries
-```
+```yaml
 key_aug: false (Do not augment during training)
 aug_min: 0.9  (Minimum f0 adjustment multiplier)
 aug_max: 1.4   (Maximum f0 adjustment multiplier)
@@ -66,7 +66,7 @@ That's it. Note that data augmentation may damage the sound quality!
 
 # Online data augmentation (recommend)
 Note that to use the online data augmentation, use the [process.py](process.py) script, otherwise offline and online augmentation will be superimposed
-```angular2html
+```yaml
 key_aug: true (Do augment during training)
 key_aug_prob: 0.5 (Data augmentation probability)
 aug_min: 0.9  (Minimum f0 adjustment multiplier)
