@@ -65,7 +65,7 @@ python [export_ckpt.py](export_ckpt.py) --ckpt_path ckpt路径  --save_path 导�
 
 因为 pytorch-lightning 的问题所以说在 GAN 训练过程中实际的步数是它显示步数的一半
 
-如果你需要微调社区声码器权重建议使用[ft_hifigan.yaml](configs/Fft_hifigan.yaml) 配置文件
+如果你需要微调社区声码器权重建议使用[ft_hifigan.yaml](configs/ft_hifigan.yaml) 配置文件
 
 如何使用微调功能建议参考 openvpi/diffsinger [项目文档](https://github.com/openvpi/DiffSinger/blob/main/docs/BestPractices.md#fine-tuning-and-parameter-freezing)
 
@@ -106,7 +106,7 @@ python export_ckpt.py --ckpt_path (your ckpt path)  --save_path (output ckpt pat
 # 注意事项
 实际步数是显示的一半
 
-微调 nsf-hifigan 声码器请将 [releases](https://github.com/openvpi/SingingVocoders/releases) 中的权重解压后放至主目录下，并使用 [ft_hifigan.yaml](configs/Fft_hifigan.yaml)
+微调 nsf-hifigan 声码器请将 [releases](https://github.com/openvpi/SingingVocoders/releases) 中的权重解压后放至主目录下，并使用 [ft_hifigan.yaml](configs/ft_hifigan.yaml)
 
 微调请使用 44100 Hz 采样率音频，并不要修改其他 mel 参数，除非你明确知道你在做什么
 
@@ -116,7 +116,7 @@ python export_ckpt.py --ckpt_path (your ckpt path)  --save_path (output ckpt pat
 
 如果要进一步导出成在 [OpenUtau](https://github.com/stakira/OpenUtau) 中使用的 onnx 格式权重，请使用 [这个](https://github.com/openvpi/DiffSinger/blob/main/scripts/export.py) 脚本
 
-配置文件中配置项的继承关系为: [base.yaml](configs/Fbase.yaml) -> [base_hifi.yaml](configs/Fbase_hifi.yaml) -> [ft_hifigan.yaml](configs/Fft_hifigan.yaml)
+配置文件中配置项的继承关系为: [base.yaml](configs/base.yaml) -> [base_hifi.yaml](configs/base_hifi.yaml) -> [ft_hifigan.yaml](configs/ft_hifigan.yaml)
 
 不要使用bf16训练模型, 它可能导致音质问题
 
@@ -125,18 +125,18 @@ python export_ckpt.py --ckpt_path (your ckpt path)  --save_path (output ckpt pat
 冻结 mpd 模块可能可以有更好的结果
 
 # 其它模型
-[HiFivae.yaml](configs/FHiFivae.yaml)hifivae.yaml 训练vae模型
+[HiFivae.yaml](configs/HiFivae.yaml)hifivae.yaml 训练vae模型
 
-[base_hifi_chroma.yaml](configs/Fbase_hifi_chroma.yaml) 训练忽略8度nsf hifigan
+[base_hifi_chroma.yaml](configs/base_hifi_chroma.yaml) 训练忽略8度nsf hifigan
 
-[base_hifi.yaml](configs/Fbase_hifi.yaml) 训练nsf hifigan
+[base_hifi.yaml](configs/base_hifi.yaml) 训练nsf hifigan
 
-[base_ddspgan.yaml](configs/Fbase_ddspgan.yaml) 训练带鉴别器的ddsp模型
+[base_ddspgan.yaml](configs/base_ddspgan.yaml) 训练带鉴别器的ddsp模型
 
-[ddsp_univnet.yaml](configs/Fddsp_univnet.yaml) 训练ddsp 混合univnet模型
+[ddsp_univnet.yaml](configs/ddsp_univnet.yaml) 训练ddsp 混合univnet模型
 
-[nsf_univnet.yaml](configs/Fnsf_univnet.yaml) 训练带nsf的univnet（推荐）
+[nsf_univnet.yaml](configs/nsf_univnet.yaml) 训练带nsf的univnet（推荐）
 
-[univnet.yaml](configs/Funivnet.yaml) 训练原版univnet
+[univnet.yaml](configs/univnet.yaml) 训练原版univnet
 
-[lvc_base_ddspgan.yaml](configs/Flvc_base_ddspgan.yaml) 训练使用lvc滤波器的 ddsp模型
+[lvc_base_ddspgan.yaml](configs/lvc_base_ddspgan.yaml) 训练使用lvc滤波器的 ddsp模型
