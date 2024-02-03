@@ -76,7 +76,7 @@ class ResBlock1(torch.nn.Module):
             for l in self.convs2:
                 remove_weight_norm(l)
         else:
-             for l in self.convs1:
+            for l in self.convs1:
                 torch.nn.utils.parametrize.remove_parametrizations(l)
             for l in self.convs2:
                 torch.nn.utils.parametrize.remove_parametrizations(l)
