@@ -86,7 +86,7 @@ class nsf_HiFigan_dataset(Dataset):
                 crop_mel_frames = int(np.ceil((self.config['crop_mel_frames'] + 4) * speed))
                 samples_per_frame = self.config['hop_size']
                 crop_wav_samples = crop_mel_frames * samples_per_frame
-                if crop_wav_samples < audio.shape[0]:
+                if crop_wav_samples >= audio.shape[0]:
                     return {'f0': data['f0'], 'spectrogram': data['mel'], 'audio': data['audio']}
                 start = random.randint(0, audio.shape[0] - 1 - crop_wav_samples)
                 end = start + crop_wav_samples
