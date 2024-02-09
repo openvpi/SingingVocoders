@@ -10,13 +10,14 @@ LRELU_SLOPE = 0.1
 _OLD_WEIGHT_NORM = False
 try:
     from torch.nn.utils.parametrizations import weight_norm
-    from torch.nn.utils.parametrizations import spectral_norm
+    # from torch.nn.utils.parametrizations import spectral_norm
 except ImportError:
     from torch.nn.utils import weight_norm
     from torch.nn.utils import remove_weight_norm
-    from torch.nn.utils import spectral_norm
+
 
     _OLD_WEIGHT_NORM = True
+from torch.nn.utils import spectral_norm
 
 
 class AttrDict(dict):
