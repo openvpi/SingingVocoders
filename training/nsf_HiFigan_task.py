@@ -96,6 +96,8 @@ class nsf_HiFigan_dataset(Dataset):
                 f0, uv = get_pitch(audio.numpy(), hparams=self.config, speed=speed, interp_uv=True, length=mel_aug.shape[-1])
                 if f0 is None:
                     return {'f0': data['f0'], 'spectrogram': data['mel'], 'audio': data['audio']}
+                audio_aug = audio_aug[2*samples_per_frame: -2*samples_per_frame].numpy()
+                mel_aug = mel_aug[0, :, 2:-2].T.numpy()
                 f0_aug = f0[2:-2] * speed
                 return {'f0': f0_aug, 'spectrogram': mel_aug, 'audio': audio_aug}
 
