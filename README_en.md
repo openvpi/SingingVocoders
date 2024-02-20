@@ -77,7 +77,7 @@ Note that data augmentation may damage the sound quality!
 # Note
 Because of some problems the actual number of steps is half of what it shows
 
-To fine-tune the nsf-hifigan vocoder, please unzip the weights in [releases](https://github.com/openvpi/SingingVocoders/releases) and put them in the main directory, and use [ft_hifigan.yaml](configs%2Fft_hifigan.yaml)
+To fine-tune the nsf-hifigan vocoder, please download and unzip the weights in [releases](https://github.com/openvpi/SingingVocoders/releases), and modify the 'finetune_ckpt_path' item in [ft_hifigan.yaml](configs%2Fft_hifigan.yaml) to the checkpoint file.
 
 For fine-tuning please use 44100 Hz samplerate audio and do not modify other mel parameters unless you know exactly what you are doing
 
