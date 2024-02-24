@@ -37,9 +37,13 @@ def wav2spec(warp):
     try:
         audio, sr = torchaudio.load(pathslist[0])
         if sr != config['audio_sample_rate']:
-            print('error:flie_', str(pathslist[0]),
-                  f'_audio_sample_rate is {str(sr)} not {str(config["audio_sample_rate"])}')
-            return None
+            if sr > config['audio_sample_rate']:
+                audio = torchaudio.transforms.Resample(orig_freq=sr, new_freq=config['audio_sample_rate'])(audio)
+            else:
+            # audio= torchaudio.transforms.Resample(orig_freq=sr, new_freq=config['audio_sample_rate'])(audio)
+                print('error:flie_', str(pathslist[0]),
+                      f'_audio_sample_rate is {str(sr)} not {str(config["audio_sample_rate"])}')
+                return None
         mel = dynamic_range_compression_torch(mel_spec_transform(audio))
         f0, uv = get_pitch(audio.numpy()[0], hparams=config, interp_uv=True, length=len(mel[0].T))
         if f0 is None:
