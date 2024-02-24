@@ -65,7 +65,7 @@ python [export_ckpt.py](export_ckpt.py) --ckpt_path ckpt路径  --save_path 导�
 
 因为 pytorch-lightning 的问题所以说在 GAN 训练过程中实际的步数是它显示步数的一半
 
-如果你需要微调社区声码器权重建议使用[ft_hifigan.yaml](configs/ft_hifigan.yaml) 配置文件
+如果你需要微调社区声码器请使用[ft_hifigan.yaml](configs/ft_hifigan.yaml) 配置文件，并用 'finetune_ckpt_path' 选项指定权重路径
 
 如何使用微调功能建议参考 openvpi/diffsinger [项目文档](https://github.com/openvpi/DiffSinger/blob/main/docs/BestPractices.md#fine-tuning-and-parameter-freezing)
 
@@ -106,11 +106,11 @@ python export_ckpt.py --ckpt_path (your ckpt path)  --save_path (output ckpt pat
 # 注意事项
 实际步数是显示的一半
 
-微调 nsf-hifigan 声码器请将 [releases](https://github.com/openvpi/SingingVocoders/releases) 中的权重解压后放至主目录下，并使用 [ft_hifigan.yaml](configs/ft_hifigan.yaml)
+微调 nsf-hifigan 声码器请下载并解压 [releases](https://github.com/openvpi/SingingVocoders/releases) 中的权重，并将 [ft_hifigan.yaml](configs/ft_hifigan.yaml) 中的 'finetune_ckpt_path' 选项改为权重路径
 
 微调请使用 44100 Hz 采样率音频，并不要修改其他 mel 参数，除非你明确知道你在做什么
 
-微调功能使用请参考 openvpi/DiffSinger [项目文档](https://github.com/openvpi/DiffSinger/blob/main/docs/BestPractices.md#fine-tuning-and-parameter-freezing)
+微调的其他功能使用请参考 openvpi/DiffSinger [项目文档](https://github.com/openvpi/DiffSinger/blob/main/docs/BestPractices.md#fine-tuning-and-parameter-freezing)
 
 导出的权重可以在 [DDSP-SVC](https://github.com/yxlllc/DDSP-SVC), [Diffusion-SVC](https://github.com/CNChTu/Diffusion-SVC), [so-vits-svc](https://github.com/svc-develop-team/so-vits-svc) 和 [DiffSinger (openvpi)](https://github.com/openvpi/DiffSinger) 等项目中使用
 

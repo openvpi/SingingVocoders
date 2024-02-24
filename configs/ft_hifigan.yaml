@@ -142,7 +142,7 @@ seed: 114514
 ###########
 
 finetune_enabled: true
-finetune_ckpt_path: hifi.ckpt
+finetune_ckpt_path: nsf_hifigan_44.1k_hop512_128bin_2024.02.ckpt
 finetune_ignored_params: []
 finetune_strict_shapes: true
 

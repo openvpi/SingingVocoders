@@ -83,13 +83,23 @@ class nsf_HiFigan_dataset(Dataset):
             if random.random() < self.key_aug_prob:
                 audio = torch.from_numpy(data['audio'])
                 speed = random.uniform(self.config['aug_min'], self.config['aug_max'])
-                audiox = wav_aug(audio, self.config["hop_size"], speed=speed)
-                mel = dynamic_range_compression_torch(self.mel_spec_transform(audiox[None,:]))
-                f0, uv = get_pitch(audio.numpy(), hparams=self.config, speed=speed, interp_uv=True, length=len(mel[0].T))
+                crop_mel_frames = int(np.ceil((self.config['crop_mel_frames'] + 4) * speed))
+                samples_per_frame = self.config['hop_size']
+                crop_wav_samples = crop_mel_frames * samples_per_frame
+                if crop_wav_samples >= audio.shape[0]:
+                    return {'f0': data['f0'], 'spectrogram': data['mel'], 'audio': data['audio']}
+                start = random.randint(0, audio.shape[0] - 1 - crop_wav_samples)
+                end = start + crop_wav_samples
+                audio = audio[start:end]
+                audio_aug = wav_aug(audio, self.config["hop_size"], speed=speed)
+                mel_aug = dynamic_range_compression_torch(self.mel_spec_transform(audio_aug[None,:]))
+                f0, uv = get_pitch(audio.numpy(), hparams=self.config, speed=speed, interp_uv=True, length=mel_aug.shape[-1])
                 if f0 is None:
                     return {'f0': data['f0'], 'spectrogram': data['mel'], 'audio': data['audio']}
-                f0 *= speed
-                return {'f0': f0, 'spectrogram': mel[0].T.numpy(), 'audio': audiox.numpy()}
+                audio_aug = audio_aug[2*samples_per_frame: -2*samples_per_frame].numpy()
+                mel_aug = mel_aug[0, :, 2:-2].T.numpy()
+                f0_aug = f0[2:-2] * speed
+                return {'f0': f0_aug, 'spectrogram': mel_aug, 'audio': audio_aug}
 
             else:
                 return {'f0': data['f0'], 'spectrogram': data['mel'], 'audio': data['audio']}
@@ -107,13 +117,15 @@ class nsf_HiFigan_dataset(Dataset):
         for record in minibatch:
 
             # Filter out records that aren't long enough.
-            if len(record['spectrogram']) <= crop_mel_frames:
+            if record['spectrogram'].shape[0] < crop_mel_frames:
                 del record['spectrogram']
                 del record['audio']
                 del record['f0']
                 continue
-
-            start = random.randint(0, record['spectrogram'].shape[0] - 1 - crop_mel_frames)
+            elif record['spectrogram'].shape[0] == crop_mel_frames:
+                start = 0
+            else:
+                start = random.randint(0, record['spectrogram'].shape[0] - 1 - crop_mel_frames)
             end = start + crop_mel_frames
             if self.infer:
                 record['spectrogram'] = record['spectrogram'].T
