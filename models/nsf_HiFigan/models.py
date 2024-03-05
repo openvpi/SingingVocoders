@@ -3,9 +3,21 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import AvgPool1d, Conv1d, Conv2d, ConvTranspose1d
-from torch.nn.utils import remove_weight_norm, spectral_norm, weight_norm
+
+# from torch.nn.utils import remove_weight_norm, spectral_norm, weight_norm
 
 LRELU_SLOPE = 0.1
+_OLD_WEIGHT_NORM = False
+try:
+    from torch.nn.utils.parametrizations import weight_norm
+    # from torch.nn.utils.parametrizations import spectral_norm
+except ImportError:
+    from torch.nn.utils import weight_norm
+    from torch.nn.utils import remove_weight_norm
+
+
+    _OLD_WEIGHT_NORM = True
+from torch.nn.utils import spectral_norm
 
 
 class AttrDict(dict):
@@ -22,6 +34,7 @@ def init_weights(m, mean=0.0, std=0.01):
 
 def get_padding(kernel_size, dilation=1):
     return int((kernel_size * dilation - dilation) / 2)
+
 
 class ResBlock1(torch.nn.Module):
     def __init__(self, h, channels, kernel_size=3, dilation=(1, 3, 5)):
@@ -57,10 +70,17 @@ class ResBlock1(torch.nn.Module):
         return x
 
     def remove_weight_norm(self):
-        for l in self.convs1:
-            remove_weight_norm(l)
-        for l in self.convs2:
-            remove_weight_norm(l)
+        global _OLD_WEIGHT_NORM
+        if _OLD_WEIGHT_NORM:
+            for l in self.convs1:
+                remove_weight_norm(l)
+            for l in self.convs2:
+                remove_weight_norm(l)
+        else:
+            for l in self.convs1:
+                torch.nn.utils.parametrize.remove_parametrizations(l)
+            for l in self.convs2:
+                torch.nn.utils.parametrize.remove_parametrizations(l)
 
 
 class ResBlock2(torch.nn.Module):
@@ -83,8 +103,15 @@ class ResBlock2(torch.nn.Module):
         return x
 
     def remove_weight_norm(self):
-        for l in self.convs:
-            remove_weight_norm(l)
+
+        global _OLD_WEIGHT_NORM
+        if _OLD_WEIGHT_NORM:
+            for l in self.convs:
+                remove_weight_norm(l)
+
+        else:
+            for l in self.convs:
+                torch.nn.utils.parametrize.remove_parametrizations(l)
 
 
 class SineGen(torch.nn.Module):
@@ -277,12 +304,23 @@ class Generator(torch.nn.Module):
     def remove_weight_norm(self):
         # rank_zero_info('Removing weight norm...')
         print('Removing weight norm...')
-        for l in self.ups:
-            remove_weight_norm(l)
-        for l in self.resblocks:
-            l.remove_weight_norm()
-        remove_weight_norm(self.conv_pre)
-        remove_weight_norm(self.conv_post)
+        global _OLD_WEIGHT_NORM
+        if _OLD_WEIGHT_NORM:
+            for l in self.ups:
+                remove_weight_norm(l)
+            for l in self.resblocks:
+                l.remove_weight_norm()
+
+            remove_weight_norm(self.conv_pre)
+            remove_weight_norm(self.conv_post)
+        else:
+            for l in self.ups:
+                torch.nn.utils.parametrize.remove_parametrizations(l)
+            for l in self.resblocks:
+                l.remove_weight_norm()
+
+            torch.nn.utils.parametrize.remove_parametrizations(self.conv_pre)
+            torch.nn.utils.parametrize.remove_parametrizations(self.conv_post)
 
 
 class DiscriminatorP(torch.nn.Module):
@@ -372,13 +410,11 @@ class MultiPeriodDiscriminator(torch.nn.Module):
 
         fmap_rs = []
 
-
         for i, d in enumerate(self.discriminators):
             y_d_r, fmap_r = d(y)
 
             y_d_rs.append(y_d_r)
             fmap_rs.append(fmap_r)
-
 
         return y_d_rs, fmap_rs,
 
@@ -444,7 +480,6 @@ class MultiScaleDiscriminator(torch.nn.Module):
             y_d_rs.append(y_d_r)
             fmap_rs.append(fmap_r)
 
-
         return y_d_rs, fmap_rs,
 
 
@@ -464,7 +499,7 @@ def discriminator_loss(disc_real_outputs, disc_generated_outputs):
 
     for dr, dg in zip(disc_real_outputs, disc_generated_outputs):
         r_loss = torch.mean((1 - dr) ** 2)
-        g_loss = torch.mean(dg**2)
+        g_loss = torch.mean(dg ** 2)
         loss += r_loss + g_loss
         r_losses.append(r_loss.item())
         g_losses.append(g_loss.item())
