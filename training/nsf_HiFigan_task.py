@@ -247,12 +247,18 @@ class nsf_HiFigan(GanBaseTask):
                                                  data_dir=pathlib.Path(self.config['DataIndexPath']) / self.config[
                                                      'valid_set_name'], infer=True)
     def build_model(self):
-        cfg=self.config['model_args']
-
-        cfg.update({'sampling_rate':self.config['audio_sample_rate'],'num_mels':self.config['audio_num_mel_bins'],'hop_size':self.config['hop_size']})
-        h=AttrDict(cfg)
-        self.generator=Generator(h)
-        self.discriminator=nn.ModuleDict({'msd':MultiScaleDiscriminator(), 'mpd':MultiPeriodDiscriminator(periods=cfg['discriminator_periods'])})
+        cfg = self.config['model_args']
+        cfg.update({
+            'sampling_rate': self.config['audio_sample_rate'],
+            'num_mels': self.config['audio_num_mel_bins'],
+            'hop_size': self.config['hop_size']})
+        if 'mini_nsf' in self.config.keys():
+            cfg.update({'mini_nsf': self.config['mini_nsf']})
+        else:
+            cfg.update({'mini_nsf': False})
+        h = AttrDict(cfg)
+        self.generator = Generator(h)
+        self.discriminator = nn.ModuleDict({'msd':MultiScaleDiscriminator(), 'mpd':MultiPeriodDiscriminator(periods=cfg['discriminator_periods'])})
 
     def build_losses_and_metrics(self):
         self.mix_loss=HiFiloss(self.config)
