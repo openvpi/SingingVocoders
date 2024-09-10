@@ -47,9 +47,7 @@ def export(exp_name, ckpt_path, save_path, work_dir):
         new_config['win_size'] = config['win_size']
         new_config['fmin'] = config['fmin']
         new_config['fmax'] = config['fmax']
-        if 'mini_nsf' in config.keys():
-            new_config['mini_nsf'] = config['mini_nsf']
-        else:
+        if 'mini_nsf' not in new_config.keys():
             new_config['mini_nsf'] = False
         json_file.write(json.dumps(new_config, indent=1))
         print("Export configuration file successfully: ", new_config_file)

@@ -24,11 +24,9 @@ def stft(x, fft_size, hop_size, win_length, window):
 
     """
     x_stft = torch.stft(x, fft_size, hop_size, win_length, window, return_complex=True)
-    real = x_stft.real
-    imag = x_stft.imag
 
     # NOTE(kan-bayashi): clamp is needed to avoid nan or inf
-    return torch.sqrt(torch.clamp(real ** 2 + imag ** 2, min=1e-7)).transpose(2, 1)
+    return torch.clamp(x_stft.abs(), min=10**(-3.5)).transpose(2, 1)
 
 
 class SpectralConvergenceLoss(torch.nn.Module):
@@ -108,12 +106,10 @@ class STFTLoss(torch.nn.Module):
 
 
 class warp_stft:
-    def __init__(self,cfg={},divce='cuda'):
-        self.stft=MultiResolutionSTFTLoss(**cfg).to(divce)
+    def __init__(self, cfg={}, device='cuda'):
+        self.stft = MultiResolutionSTFTLoss(**cfg).to(device)
 
-
-
-    def loss(self,x, y):
+    def loss(self, x, y):
         return self.stft(x, y)
         
         

@@ -10,6 +10,10 @@ pe: 'parselmouth' # 'parselmouth' or 'harvest'
 f0_min: 65
 f0_max: 1100
 
+pc_aug: false # pc-nsf training method
+pc_aug_prob: 0.5
+pc_aug_key: 5
+
 aug_min: 0.9
 aug_max: 1.4
 aug_num: 1
@@ -42,7 +46,6 @@ mel_vmin: -6. #-6.
 mel_vmax: 1.5
 
 
-mini_nsf: false
 audio_sample_rate: 44100
 audio_num_mel_bins: 128
 hop_size: 512            # Hop size.
@@ -63,6 +66,7 @@ crop_mel_frames: 32
 
 #model_cls: training.nsf_HiFigan_task.nsf_HiFigan
 model_args:
+  mini_nsf: false
   upsample_rates: [ 8, 8, 2, 2, 2 ]
   upsample_kernel_sizes: [ 16,16, 4, 4, 4 ]
   upsample_initial_channel: 512
