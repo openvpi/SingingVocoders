@@ -268,7 +268,9 @@ class nsf_HiFigan(GanBaseTask):
     
     def G2forward(self, sample):
         f0 = sample['f0']
-        b = int(np.round(f0.shape[0] * self.pc_aug_prob))
+        b = np.random.binomial(n=f0.shape[0], p=self.pc_aug_prob)
+        if b == 0:
+            return self.Gforward(sample)
         key = (2 * torch.rand(b, device=f0.device).unsqueeze(-1) - 1) * self.pc_aug_key
         aug_f0 = torch.cat((f0[: b] * 2 ** (key / 12), f0[b :]), dim=0)
         wav = self.generator(x=sample['mel'], f0=aug_f0)
