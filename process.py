@@ -38,7 +38,10 @@ def wav2spec(warp):
         audio, sr = torchaudio.load(pathslist[0])
         if sr != config['audio_sample_rate']:
             if sr > config['audio_sample_rate']:
-                audio = torchaudio.transforms.Resample(orig_freq=sr, new_freq=config['audio_sample_rate'])(audio)
+                audio = torchaudio.transforms.Resample(
+                                orig_freq=sr, 
+                                new_freq=config['audio_sample_rate'],
+                                lowpass_filter_width=128)(audio)
             else:
             # audio= torchaudio.transforms.Resample(orig_freq=sr, new_freq=config['audio_sample_rate'])(audio)
                 print('error:flie_', str(pathslist[0]),

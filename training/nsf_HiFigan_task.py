@@ -43,7 +43,10 @@ def dynamic_range_compression_torch(x, C=1, clip_val=1e-9):
 def wav_aug(wav, hop_size, speed=1):
     orig_freq = int(np.round(hop_size * speed))
     new_freq = hop_size
-    return torchaudio.transforms.Resample(orig_freq=orig_freq, new_freq=new_freq)(wav)
+    return torchaudio.transforms.Resample(
+                orig_freq=orig_freq, 
+                new_freq=new_freq, 
+                lowpass_filter_width=128)(wav)
 
 
 class nsf_HiFigan_dataset(Dataset):
