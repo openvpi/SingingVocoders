@@ -30,7 +30,7 @@ val_num: 5 # This is the number of valves you want.
 
  # (The paths in the two lists are one-to-one, so the number should be the same.)
 
- # (Then, the preprocessor scans all .wav files, including subfolders.)
+ # (Then, the preprocessor scans all .wav and .flac files, including subfolders.)
 
  # (Normally, there are only these three to change.)
 ```
