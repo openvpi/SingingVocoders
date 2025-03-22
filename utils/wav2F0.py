@@ -6,6 +6,13 @@ import torch
 
 # from utils.pitch_utils import interp_f0
 
+PITCH_EXTRACTORS_ID_TO_NAME = {
+    1: 'parselmouth',
+    2: 'harvest',
+}
+PITCH_EXTRACTORS_NAME_TO_ID = {v: k for k, v in PITCH_EXTRACTORS_ID_TO_NAME.items()}
+
+
 def norm_f0(f0, uv=None):
     if uv is None:
         uv = f0 == 0
@@ -32,8 +39,7 @@ def interp_f0(f0, uv=None):
     return denorm_f0(f0, uv=None), uv
 
 
-def get_pitch(wav_data, length, hparams, speed=1, interp_uv=False):
-    pe = hparams.get('pe', 'parselmouth')
+def get_pitch(pe, wav_data, length, hparams, speed=1, interp_uv=False):
     if pe == 'parselmouth':
         return get_pitch_parselmouth(wav_data, length, hparams, speed=speed, interp_uv=interp_uv)
     elif pe == 'harvest':
@@ -71,9 +77,7 @@ def get_pitch_parselmouth(wav_data, length, hparams, speed=1, interp_uv=False):
         f0 = np.pad(f0, (0, length - len(f0)))
     f0 = f0[: length]
     uv = f0 == 0
-    if uv.all():
-        return None, None
-    if interp_uv:
+    if uv.any() and interp_uv:
         f0, uv = interp_f0(f0, uv)
     return f0, uv
 
@@ -90,8 +94,6 @@ def get_pitch_harvest(wav_data, length, hparams, speed=1, interp_uv=False):
         f0 = np.pad(f0, (0, length - f0.size))
     f0 = f0[:length]
     uv = f0 == 0
-    if uv.all():
-        return None, None
-    if interp_uv:
+    if uv.any() and interp_uv:
         f0, uv = interp_f0(f0, uv)
     return f0, uv

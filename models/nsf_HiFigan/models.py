@@ -202,7 +202,8 @@ class Generator(torch.nn.Module):
         self.num_kernels = len(h.resblock_kernel_sizes)
         self.num_upsamples = len(h.upsample_rates)
         self.mini_nsf = h.mini_nsf
-            
+        self.noise_sigma = h.noise_sigma
+        
         if h.mini_nsf:
             self.source_sr = h.sampling_rate / int(np.prod(h.upsample_rates[2: ]))
             self.upp = int(np.prod(h.upsample_rates[: 2]))
@@ -260,6 +261,8 @@ class Generator(torch.nn.Module):
         else:
             har_source = self.m_source(f0, self.upp).transpose(1, 2)
         x = self.conv_pre(x)
+        if self.noise_sigma is not None and self.noise_sigma > 0:
+            x += self.noise_sigma * torch.randn_like(x)
         for i in range(self.num_upsamples):
             x = F.leaky_relu(x, LRELU_SLOPE)
             x = self.ups[i](x)
@@ -354,12 +357,10 @@ class DiscriminatorP(torch.nn.Module):
         for l in self.convs:
             x = l(x)
             x = F.leaky_relu(x, LRELU_SLOPE, inplace=True)
-            x = torch.nan_to_num(x)
 
             fmap.append(x)
 
         x = self.conv_post(x)
-        x = torch.nan_to_num(x)
         fmap.append(x)
         x = torch.flatten(x, 1, -1)
 
@@ -412,11 +413,9 @@ class DiscriminatorS(torch.nn.Module):
         for l in self.convs:
             x = l(x)
             x = F.leaky_relu(x, LRELU_SLOPE, inplace=True)
-            x = torch.nan_to_num(x)
             fmap.append(x)
 
         x = self.conv_post(x)
-        x = torch.nan_to_num(x)
         fmap.append(x)
         x = torch.flatten(x, 1, -1)
 

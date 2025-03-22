@@ -338,12 +338,10 @@ class DiscriminatorP(torch.nn.Module):
         for l in self.convs:
             x = l(x)
             x = F.leaky_relu(x, LRELU_SLOPE, inplace=True)
-            x = torch.nan_to_num(x)
 
             fmap.append(x)
 
         x = self.conv_post(x)
-        x = torch.nan_to_num(x)
         fmap.append(x)
         x = torch.flatten(x, 1, -1)
 
@@ -394,11 +392,9 @@ class DiscriminatorS(torch.nn.Module):
         for l in self.convs:
             x = l(x)
             x = F.leaky_relu(x, LRELU_SLOPE, inplace=True)
-            x = torch.nan_to_num(x)
             fmap.append(x)
 
         x = self.conv_post(x)
-        x = torch.nan_to_num(x)
         fmap.append(x)
         x = torch.flatten(x, 1, -1)
 

@@ -7,6 +7,7 @@ from tqdm import tqdm
 from utils import get_latest_checkpoint_path
 from utils.config_utils import read_full_config, print_config
 
+
 @click.command(help='')
 @click.option('--exp_name', required=False, metavar='EXP', help='Name of the experiment')
 @click.option('--ckpt_path', required=False, metavar='FILE', help='Path to the checkpoint file')
@@ -32,6 +33,7 @@ def export(exp_name, ckpt_path, save_path, work_dir):
         if 'generator.' in i:
             # print(i)
             ckpt[i.replace('generator.', '')] = temp_dict[i]
+    pathlib.Path(save_path).parent.mkdir(parents=True, exist_ok=True)
     torch.save({'generator': ckpt}, save_path)
     print("Export checkpoint file successfully: ", save_path)
     
@@ -53,9 +55,12 @@ def export(exp_name, ckpt_path, save_path, work_dir):
             new_config['pc_aug'] = config['pc_aug'] 
         if 'mini_nsf' not in new_config.keys():
             new_config['mini_nsf'] = False
+        if 'noise_sigma' not in new_config.keys():
+            new_config['noise_sigma'] = 0.0
         
         json_file.write(json.dumps(new_config, indent=1))
         print("Export configuration file successfully: ", new_config_file)
+
 
 if __name__ == '__main__':
     export()

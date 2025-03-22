@@ -230,7 +230,6 @@ class GanBaseTask(pl.LightningModule):
                     continue
 
                 state_dict[i] = ckpt['state_dict'][i]
-                print(i)
             return state_dict
         else:
             raise RuntimeError("")

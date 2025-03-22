@@ -11,7 +11,7 @@ f0_min: 65
 f0_max: 1100
 
 pc_aug: false # pc-nsf training method
-pc_aug_prob: 0.5
+pc_aug_rate: 0.5
 pc_aug_key: 5
 
 aug_min: 0.9
