@@ -148,7 +148,7 @@ seed: 114514
 ###########
 
 finetune_enabled: true
-finetune_ckpt_path: pretrained/pc_nsf_hifigan_44.1k_hop512_128bin_2025.02.ckpt
+finetune_ckpt_path: pc_nsf_hifigan_44.1k_hop512_128bin_2025.02.ckpt
 finetune_ignored_params: []
 finetune_strict_shapes: true
 
