@@ -13,11 +13,11 @@ python process.py --config (your config path) --num_cpu (Number of cpu threads u
 The following configuration items are what you need to change during preprocessing
 ```yaml
 
-data_input_path: []  the path for your data
+data_input_path: []  # the path for your data
 
-data_out_path: [] the path for the preprocessed output
+data_out_path: []  # the path for the preprocessed output
 
-val_num: 1 the number of validation audio
+val_num: 10  # the number of validation audio
 ```
 An example
 ```yaml
@@ -36,6 +36,21 @@ val_num: 5 # This is the number of valves you want.
 ```
 
 ## Training
+Adjust config according to your GPU memory
+(mini_nsf and pc_aug is enabled by default)
+
+For 24GB memory (default)
+```yaml
+crop_mel_frames: 48
+batch_size: 10
+pc_aug_rate: 0.5
+```
+For 16GB memory (need manual editing)
+```yaml
+crop_mel_frames: 32
+batch_size: 10
+pc_aug_rate: 0.4
+```
 Run the following training script
 ```sh
 python train.py --config (your config path) --exp_name (your ckpt name) --work_dir (working directory, optional)
@@ -54,18 +69,8 @@ if you finish training you can use this script to export the diffsinger vocoder 
 python export_ckpt.py --ckpt_path (your ckpt path)  --save_path (output ckpt path) --work_dir (working directory, optional)
 ```
 
-# Offline data augmentation
-Replace the preprocessing script with [process_aug.py](process_aug.py) and add configuration entries
-```yaml
-key_aug: false (Do not augment during training)
-aug_min: 0.9  (Minimum f0 adjustment multiplier)
-aug_max: 1.4   (Maximum f0 adjustment multiplier)
-aug_num: 1   (Data augmentation multiplier)
-```
-That's it. Note that data augmentation may damage the sound quality!
-
 # Online data augmentation (recommend)
-Note that to use the online data augmentation, use the [process.py](process.py) script, otherwise offline and online augmentation will be superimposed
+add config
 ```yaml
 key_aug: true (Do augment during training)
 key_aug_prob: 0.5 (Data augmentation probability)
@@ -111,3 +116,20 @@ Almost 2k steps is enough for fine-tuning of small dataset.
 [univnet.yaml](configs%2Funivnet.yaml) Training original univnet
 
 [lvc_base_ddspgan.yaml](configs%2Flvc_base_ddspgan.yaml) Training ddsp model with lvc filters
+
+# Special Statements
+
+We regret to publish a verified Registry of Hostile Conduct (shown as below). This registry documents individuals/entities who have engaged in long-term destructive activities against the development team.
+
+We solemnly declare:
+
+1. Strongly recommend all users review this registry before downloading and using this vocoder
+2. No technical or legal restrictions are currently imposed on listed parties, as the vocoder is
+   still licensed under CC BY-NC-SA 4.0
+3. Reserve the right to apply further restrictions in case of persistent malicious acts
+
+## Registry of Hostile Conduct
+
+|       Name       | Identifiers                                                                    | Reason                                                                                                                                                                                                                                                   |
+|:----------------:|:-------------------------------------------------------------------------------|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 旋转_turning_point | QQ: 2673587414;<br/>Bilibili UID: 285801087;<br/>Discord username: colstone233 | Engaging in long-term hostile and personal attacks against developers, repeatedly spreading false information about DiffSinger and the development team, and interfering with the development process of the vocoder and other projects in the community |
