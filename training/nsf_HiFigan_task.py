@@ -10,10 +10,12 @@ from torch import nn
 from torch.utils.data import Dataset
 
 from models.nsf_HiFigan.models import Generator, AttrDict, MultiScaleDiscriminator, MultiPeriodDiscriminator
+from models.wm_d import PerthDetectorDiscriminator
 from modules.loss.HiFiloss import HiFiloss
 from training.base_task_gan import GanBaseTask
 from utils.wav2F0 import PITCH_EXTRACTORS_ID_TO_NAME, get_pitch
 from utils.wav2mel import PitchAdjustableMelSpectrogram
+from perth.utils import calculate_audio_metrics
 
 
 def spec_to_figure(spec, vmin=None, vmax=None):
@@ -254,6 +256,9 @@ class nsf_HiFigan(GanBaseTask):
         self.logged_gt_wav = set()
         self.stft = stftlog()
         self.max_f0 = get_max_f0_from_config(config)
+        self.add_watermark = self.config.get('add_watermark', False)
+        if self.add_watermark:
+            self.lambda_wm = self.config.get('lambda_wm', 1.0)
 
     def build_dataset(self):
 
@@ -280,6 +285,15 @@ class nsf_HiFigan(GanBaseTask):
             'msd': MultiScaleDiscriminator(),
             'mpd': MultiPeriodDiscriminator(periods=cfg['discriminator_periods'])
         })
+        if self.add_watermark:
+            loss_tau = self.config.get('watermark_loss_tau', 0.7)
+            loss_alpha = self.config.get('watermark_loss_alpha', 0.1)
+            self.watermark_discriminator = PerthDetectorDiscriminator(
+                audio_sr=self.config['audio_sample_rate'],
+                device=self.device,
+                loss_tau=loss_tau,
+                loss_alpha=loss_alpha
+            )
 
     def build_losses_and_metrics(self):
         self.mix_loss = HiFiloss(self.config)
@@ -379,7 +393,15 @@ class nsf_HiFigan(GanBaseTask):
         spec_loss, Auxlog = self.mix_loss.Auxloss(Goutput=Goutput, sample=sample)
         Auxloss = spec_loss + pc_wav_loss
         log_dict.update(Auxlog)
+        
         Gloss = GDloss + Auxloss
+        
+        if self.add_watermark:
+            confidence_scores = self.watermark_discriminator(Goutput['audio'])
+            watermark_loss = self.watermark_discriminator.loss(confidence_scores)
+            log_dict['watermark_loss'] = watermark_loss.item()
+            log_dict['confidence'] = confidence_scores.mean().item()
+            Gloss = Gloss + self.lambda_wm * watermark_loss
 
         opt_g.zero_grad()  # clean generator grad
         self.manual_backward(Gloss)
@@ -400,6 +422,15 @@ class nsf_HiFigan(GanBaseTask):
             stfts_log10 = torch.log10(torch.clamp(stfts, min=1e-7))
             Gstfts_log10 = torch.log10(torch.clamp(Gstfts, min=1e-7))
 
+            original_np = sample['audio'].squeeze().cpu().numpy()
+            generated_np = wav.squeeze().cpu().numpy()
+
+            min_len = min(len(original_np), len(generated_np))
+            original_np = original_np[:min_len]
+            generated_np = generated_np[:min_len]
+
+            quality_metrics = calculate_audio_metrics(original_np, generated_np)
+
             if self.global_rank == 0:
                 self.plot_mel(batch_idx, Gstfts_log10.transpose(1, 2), stfts_log10.transpose(1, 2),
                               name=f'log10stft_{batch_idx}')
@@ -412,7 +443,10 @@ class nsf_HiFigan(GanBaseTask):
                                                      global_step=self.global_step)
                     self.logged_gt_wav.add(batch_idx)
 
-        return {'stft_loss': nn.L1Loss()(Gstfts_log10, stfts_log10)}, 1
+        val_outputs = {'stft_loss': nn.L1Loss()(Gstfts_log10, stfts_log10)}
+        val_outputs.update(quality_metrics)
+        
+        return val_outputs, 1
 
     def plot_mel(self, batch_idx, spec, spec_out, name=None):
         name = f'mel_{batch_idx}' if name is None else name
