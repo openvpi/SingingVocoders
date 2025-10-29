@@ -435,7 +435,7 @@ class GanBaseTask(pl.LightningModule):
             optimizer = build_object_from_class_name(
                 optimizer_args['optimizer_cls'],
                 torch.optim.Optimizer,
-                parameterslist,
+                model if optimizer_args['optimizer_cls'] == 'modules.optimizer.muon.Muon_AdamW' else parameterslist,
                 **optimizer_args
             )
         elif isinstance(model, nn.ModuleDict):
@@ -446,7 +446,7 @@ class GanBaseTask(pl.LightningModule):
             optimizer = build_object_from_class_name(
                 optimizer_args['optimizer_cls'],
                 torch.optim.Optimizer,
-                parameterslist,
+                model if optimizer_args['optimizer_cls'] == 'modules.optimizer.muon.Muon_AdamW' else parameterslist,
                 **optimizer_args
             )
         elif isinstance(model, nn.Module):
@@ -454,7 +454,7 @@ class GanBaseTask(pl.LightningModule):
             optimizer = build_object_from_class_name(
                 optimizer_args['optimizer_cls'],
                 torch.optim.Optimizer,
-                model.parameters(),
+                model if optimizer_args['optimizer_cls'] == 'modules.optimizer.muon.Muon_AdamW' else model.parameters(),
                 **optimizer_args
             )
         else:
