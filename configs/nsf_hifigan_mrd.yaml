@@ -93,7 +93,7 @@ discriminate_optimizer_args:
   optimizer_cls: modules.optimizer.muon.Muon_AdamW
   lr: 0.0002
   muon_args:
-    weight_decay: 0.1
+    weight_decay: 0.03
   adamw_args:
     weight_decay: 0.0
   verbose: false
@@ -102,7 +102,7 @@ generater_optimizer_args:
   optimizer_cls: modules.optimizer.muon.Muon_AdamW
   lr: 0.0002
   muon_args:
-    weight_decay: 0.1
+    weight_decay: 0.03
   adamw_args:
     weight_decay: 0.0
   verbose: false
