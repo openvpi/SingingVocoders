@@ -334,6 +334,7 @@ class nsf_HiFigan(GanBaseTask):
 
         log_dict = {}
         opt_g, opt_d = self.optimizers()
+        
         # forward generator start
         pc_aug_num = int(np.ceil(sample['audio'].shape[0] * self.pc_aug_rate))
         pc_aug = self.pc_aug and pc_aug_num > 0
@@ -350,20 +351,29 @@ class nsf_HiFigan(GanBaseTask):
         else:
             Goutput = self.Gforward(sample=sample)
             audio_fake = Goutput['audio']
-
-        # forward discriminator start
+        # forward generator end
+        
+        # enable grad for discriminator's parameters
+        for D in self.discriminator.values():
+            for p in D.parameters():
+                p.requires_grad = True
+                
+        # opt discriminator start
         Dfake = self.Dforward(Goutput=audio_fake.detach())  # y_g_hat =Goutput
         Dtrue = self.Dforward(Goutput=sample['audio'])  # y =sample['audio']
         Dloss, Dlog = self.mix_loss.Dloss(Dfake=Dfake, Dtrue=Dtrue)
         log_dict.update(Dlog)
-        # forward discriminator end
 
-        # opt discriminator start
         opt_d.zero_grad()  # clean discriminator grad
         self.manual_backward(Dloss)
         opt_d.step()
         # opt discriminator end
 
+        # disable grad for discriminator's parameters
+        for D in self.discriminator.values():
+            for p in D.parameters():
+                p.requires_grad = False
+                
         # opt generator start
         GDfake = self.Dforward(Goutput=audio_fake)
         GDtrue = self.Dforward(Goutput=sample['audio'])
@@ -385,7 +395,7 @@ class nsf_HiFigan(GanBaseTask):
         self.manual_backward(Gloss)
         opt_g.step()
         # opt generator end
-
+                
         return log_dict
 
     def _validation_step(self, sample, batch_idx):
