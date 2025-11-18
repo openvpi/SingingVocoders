@@ -1,0 +1,143 @@
+# preprocessing
+base_config:
+  - configs/base.yaml
+
+data_input_path: []
+data_out_path: []
+val_num: 1
+
+pe: 'parselmouth' # 'parselmouth' or 'harvest'
+f0_min: 65
+f0_max: 1100
+
+pc_aug: false # pc-nsf training method
+pc_aug_rate: 0.5
+pc_aug_key: 5
+
+aug_min: 0.9
+aug_max: 1.4
+aug_num: 1
+key_aug: false
+key_aug_prob: 0.5
+
+use_stftloss: false
+loss_fft_sizes: [2048, 2048, 4096, 1024, 512, 256, 128,1024, 2048, 512]
+loss_hop_sizes: [512, 240, 480, 100, 50, 25, 12,120, 240, 50]
+loss_win_lengths: [2048, 1200, 2400, 480, 240, 120, 60,600, 1200, 240]
+lab_aux_melloss: 45
+lab_aux_stftloss: 2.5
+
+raw_data_dir: []
+binary_data_dir: null
+binarization_args:
+  num_workers: 8
+  shuffle: true
+
+DataIndexPath: data
+valid_set_name: valid
+train_set_name: train
+
+
+volume_aug: true
+volume_aug_prob: 0.5
+
+
+mel_vmin: -6. #-6.
+mel_vmax: 1.5
+
+
+audio_sample_rate: 44100
+audio_num_mel_bins: 128
+hop_size: 512            # Hop size.
+fft_size: 2048           # FFT size.
+win_size: 2048           # FFT size.
+fmin: 40
+fmax: 16000
+fmax_for_loss: null
+crop_mel_frames: 20
+
+
+# global constants
+
+
+# neural networks
+
+
+#model_cls: training.nsf_HiFigan_task.nsf_HiFigan
+model_args:
+  mini_nsf: false
+  upsample_rates: [ 8, 8, 2, 2, 2 ]
+  upsample_kernel_sizes: [ 16,16, 4, 4, 4 ]
+  upsample_initial_channel: 512
+  resblock_kernel_sizes: [ 3,7,11 ]
+  resblock_dilation_sizes: [ [ 1,3,5 ], [ 1,3,5 ], [ 1,3,5 ] ]
+  discriminator_periods: [ 3, 5, 7, 11, 17, 23, 37 ]
+  resblock: "1"
+
+# training
+
+task_cls: training.nsf_HiFigan_task_one_step_gan.nsf_HiFigan
+
+
+gan_d_scale: 1
+
+
+
+generater_optimizer_args:
+  optimizer_cls: torch.optim.AdamW
+  lr: 0.0001
+  beta1: 0.5
+  beta2: 0.99
+  weight_decay: 0
+
+lr_scheduler_args:
+  scheduler_cls: lr_scheduler.scheduler.WarmupLR
+  warmup_steps: 5000
+  min_lr: 0.00001
+
+clip_grad_norm: null
+#accumulate_grad_batches: 1
+#sampler_frame_count_grid: 6
+ds_workers: 4
+dataloader_prefetch_factor: 2
+
+batch_size: 3
+
+
+
+num_valid_plots: 100
+log_interval: 100
+num_sanity_val_steps: 1  # steps of validation at the beginning
+val_check_interval: 1000
+num_ckpt_keep: 5
+max_updates: 100000
+permanent_ckpt_start: 200000
+permanent_ckpt_interval: 40000
+
+###########
+# pytorch lightning
+# Read https://lightning.ai/docs/pytorch/stable/common/trainer.html#trainer-class-api for possible values
+###########
+pl_trainer_accelerator: 'auto'
+pl_trainer_devices: 'auto'
+pl_trainer_precision: '32-true'
+#pl_trainer_precision: 'bf16'
+pl_trainer_num_nodes: 1
+pl_trainer_strategy: 
+  name: auto
+  process_group_backend: nccl
+  find_unused_parameters: true
+nccl_p2p: true
+seed: 114514
+
+###########
+# finetune
+###########
+
+finetune_enabled: false
+finetune_ckpt_path: null
+finetune_ignored_params: []
+finetune_strict_shapes: true
+
+freezing_enabled: false
+frozen_params: []
