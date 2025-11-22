@@ -70,11 +70,11 @@ class LYNXNet2Block(nn.Module):
 
 
 class FastPD(torch.nn.Module):
-    def __init__(self, period, init_channel=8, strides=[4, 4, 4], kernel_size=11, glu_decay=0.1):
+    def __init__(self, period, init_channel=8, strides=[4, 4, 4], kernel_size=11, glu_decay=1.0):
         super(FastPD, self).__init__()
         self.period = period
         self.strides = strides
-        self.pre = nn.Linear(1, init_channel)
+        self.pre = nn.Linear(strides[0], init_channel * strides[0])
         self.residual_layers = nn.ModuleList(
             [
                 LYNXNet2Block(
@@ -93,15 +93,15 @@ class FastPD(torch.nn.Module):
         b, _, t = x.shape
         n = self.period * np.prod(self.strides)
         x = x[:, :, : (t // n) * n].view(b, -1, self.period)
-        x = x.transpose(1, 2).reshape(b * self.period, -1, 1)
+        x = x.transpose(1, 2).reshape(b * self.period, -1, self.strides[0])
         
         x = self.pre(x)
         for i, layer in enumerate(self.residual_layers):
-            if self.strides[i] > 1:
-                x = x.view(b, -1, x.size(2) * self.strides[i])
+            if i > 0 and self.strides[i] > 1:
+                x = x.view(b * self.period, -1, x.size(2) * self.strides[i])
             x, norm_x = layer(x)
             if i > 0:
-                fmap.append(norm_x.view(b, -1))
+                fmap.append(norm_x.view(b, -1, norm_x.size(2)))
         x = self.post(F.rms_norm(x, (x.size(-1), )))
         x = x.view(b, -1)
 
@@ -109,7 +109,7 @@ class FastPD(torch.nn.Module):
 
      
 class FastMPD(torch.nn.Module):
-    def __init__(self, periods=None, init_channel=8, strides=[4, 4, 4], kernel_size=11, glu_decay=0.1):
+    def __init__(self, periods=None, init_channel=8, strides=[4, 4, 4], kernel_size=11, glu_decay=1.0):
         super(FastMPD, self).__init__()
         self.periods = periods if periods is not None else [2, 3, 5, 7, 11]
         self.discriminators = nn.ModuleList()
