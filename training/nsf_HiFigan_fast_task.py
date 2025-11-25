@@ -286,8 +286,7 @@ class nsf_HiFigan(GanBaseTask):
                 periods=cfg['discriminator_periods'],
                 init_channel=cfg.get('fast_mpd_init_channel', 8),
                 strides=cfg.get('fast_mpd_strides', [4, 4, 4]),
-                kernel_size=cfg.get('fast_mpd_kernel_size', 11),
-                glu_decay=cfg.get('fast_mpd_glu_decay', 0.1),)
+                kernel_size=cfg.get('fast_mpd_kernel_size', 11),)
         })
 
     def build_losses_and_metrics(self):
