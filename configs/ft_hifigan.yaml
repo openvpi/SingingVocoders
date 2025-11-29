@@ -6,6 +6,11 @@ data_input_path: []
 data_out_path: []
 val_num: 10
 
+add_watermark: false
+lambda_wm: 1
+watermark_loss_tau: 0.5
+watermark_loss_alpha: 0.1
+
 pe: 'parselmouth' # 'parselmouth' or 'harvest'
 f0_min: 65
 f0_max: 1100
