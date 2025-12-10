@@ -147,8 +147,10 @@ def get_params_for_muon(model) -> List[Parameter]:
     """
     muon_params = []
     for module in model.modules():
-        for param in module.parameters(recurse=False):
+        for name, param in module.named_parameters(recurse=False):
             if not param.requires_grad:
+                continue
+            if name == 'weight_g':
                 continue
             if not isinstance(module, nn.Embedding) and param.ndim >= 2:
                 muon_params.append(param)
