@@ -22,7 +22,7 @@ class SpecDiscriminator(nn.Module):
         self.fft_size = fft_size
         self.shift_size = shift_size
         self.win_length = win_length
-        self.window = getattr(torch, window)(win_length)
+        self.register_buffer('window', getattr(torch, window)(win_length))
         self.discriminators = nn.ModuleList([
             norm_f(nn.Conv2d(1, 32, kernel_size=(3, 9), padding=(1, 4))),
             norm_f(nn.Conv2d(32, 32, kernel_size=(3, 9), stride=(1,2), padding=(1, 4))),
@@ -36,10 +36,10 @@ class SpecDiscriminator(nn.Module):
     def forward(self, y):
 
         fmap = []
-        with torch.no_grad():
-            y = y.squeeze(1)
-            y = stft(y, self.fft_size, self.shift_size, self.win_length, self.window.to(y.get_device()))
-        y = y.unsqueeze(1)
+        
+        y = y.squeeze(1)
+        y = torch.stft(y, self.fft_size, self.shift_size, self.win_length, self.window, return_complex=True)
+        y = y.unsqueeze(1).abs()
         for i, d in enumerate(self.discriminators):
             y = d(y)
             y = F.leaky_relu(y, LRELU_SLOPE)
