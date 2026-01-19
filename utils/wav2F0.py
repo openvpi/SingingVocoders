@@ -69,7 +69,7 @@ def get_pitch_parselmouth(wav_data, length, hparams, speed=1, interp_uv=False):
 
     # noinspection PyArgumentList
     s = parselmouth.Sound(wav_data, sampling_frequency=hparams['audio_sample_rate']).to_pitch_ac(
-        time_step=time_step, voicing_threshold=0.6,
+        time_step=time_step, voicing_threshold=0.6, silence_threshold=0.01,
         pitch_floor=f0_min, pitch_ceiling=f0_max)
     assert np.abs(s.t1 - 1.5 / f0_min) < 0.001
     f0 = s.selected_array['frequency'].astype(np.float32)
