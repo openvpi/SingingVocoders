@@ -42,7 +42,7 @@ class SpecDiscriminator(nn.Module):
         y = y.unsqueeze(1).abs()
         for i, d in enumerate(self.discriminators):
             y = d(y)
-            y = F.leaky_relu(y, LRELU_SLOPE)
+            y = F.leaky_relu(y, LRELU_SLOPE, True)
             fmap.append(y)
 
         y = self.out(y)

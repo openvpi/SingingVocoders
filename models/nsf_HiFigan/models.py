@@ -53,7 +53,7 @@ class ResBlock1(torch.nn.Module):
         for c1, c2 in zip(self.convs1, self.convs2):
             xt = F.leaky_relu(x, LRELU_SLOPE)
             xt = c1(xt)
-            xt = F.leaky_relu(xt, LRELU_SLOPE)
+            xt = F.leaky_relu(xt, LRELU_SLOPE, True)
             xt = c2(xt)
             x = xt + x
         return x
@@ -264,7 +264,7 @@ class Generator(torch.nn.Module):
         if self.noise_sigma is not None and self.noise_sigma > 0:
             x += self.noise_sigma * torch.randn_like(x)
         for i in range(self.num_upsamples):
-            x = F.leaky_relu(x, LRELU_SLOPE)
+            x = F.leaky_relu(x, LRELU_SLOPE, True)
             x = self.ups[i](x)
             if not self.mini_nsf:
                 x_source = self.noise_convs[i](har_source)
@@ -279,7 +279,7 @@ class Generator(torch.nn.Module):
                 else:
                     xs += self.resblocks[i * self.num_kernels + j](x)
             x = xs / self.num_kernels
-        x = F.leaky_relu(x)
+        x = F.leaky_relu(x, inplace=True)
         x = self.conv_post(x)
         x = torch.tanh(x)
         return x

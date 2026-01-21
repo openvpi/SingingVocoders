@@ -10,8 +10,7 @@ from torch import nn
 from torch.utils.data import Dataset
 
 from models.nsf_HiFigan.models import Generator, AttrDict
-from modules.univ_D.discriminator import MultiResSpecDiscriminator
-from modules.fast_D.discriminator import FastMPD
+from modules.fast_D.discriminator import FastMPD, FastMRD
 from modules.loss.univloss import univloss
 from training.base_task_gan import GanBaseTask
 from utils.wav2F0 import PITCH_EXTRACTORS_ID_TO_NAME, get_pitch
@@ -279,11 +278,14 @@ class nsf_HiFigan(GanBaseTask):
         h = AttrDict(cfg)
         self.generator = Generator(h)
         self.discriminator = nn.ModuleDict({
-            'mrd':MultiResSpecDiscriminator(fft_sizes=cfg.get('mrd_fft_sizes',[1024, 2048, 512]),
-                 hop_sizes=cfg.get('mrd_hop_sizes',[120, 240, 50]),
-                 win_lengths= cfg.get('mrd_win_lengths',[600, 1200, 240]),),
+            'mrd':FastMRD(
+                init_channel=cfg.get('fast_mrd_init_channel', 8),
+                strides=cfg.get('fast_mrd_strides', [4, 2, 2]),
+                fft_sizes=cfg.get('fast_mrd_fft_sizes', [512, 1024, 2048]),
+                hop_sizes=cfg.get('fast_mrd_hop_sizes', [64, 128, 256]),
+                win_lengths= cfg.get('fast_mrd_win_lengths', [512, 1024, 2048]),),
             'mpd': FastMPD(
-                periods=cfg['discriminator_periods'],
+                periods=cfg.get('fast_mpd_periods', cfg.get('discriminator_periods', [2, 3, 5, 7, 11])),
                 init_channel=cfg.get('fast_mpd_init_channel', 8),
                 strides=cfg.get('fast_mpd_strides', [4, 4, 4]),
                 kernel_size=cfg.get('fast_mpd_kernel_size', 11),)
