@@ -353,11 +353,6 @@ class nsf_HiFigan(GanBaseTask):
             audio_fake = Goutput['audio']
         # forward generator end
         
-        # enable grad for discriminator's parameters
-        for D in self.discriminator.values():
-            for p in D.parameters():
-                p.requires_grad = True
-                
         # opt discriminator start
         Dfake = self.Dforward(Goutput=audio_fake.detach())  # y_g_hat =Goutput
         Dtrue = self.Dforward(Goutput=sample['audio'])  # y =sample['audio']
@@ -370,9 +365,9 @@ class nsf_HiFigan(GanBaseTask):
         # opt discriminator end
 
         # disable grad for discriminator's parameters
-        for D in self.discriminator.values():
-            for p in D.parameters():
-                p.requires_grad = False
+        d_trainable_params = [p for D in self.discriminator.values() for p in D.parameters() if p.requires_grad]
+        for p in d_trainable_params:
+            p.requires_grad = False
                 
         # opt generator start
         GDfake = self.Dforward(Goutput=audio_fake)
@@ -395,7 +390,11 @@ class nsf_HiFigan(GanBaseTask):
         self.manual_backward(Gloss)
         opt_g.step()
         # opt generator end
-                
+        
+        # enable grad for discriminator's parameters
+        for p in d_trainable_params:
+            p.requires_grad = True
+            
         return log_dict
 
     def _validation_step(self, sample, batch_idx):

@@ -10,7 +10,7 @@ import numpy as np
 import torch
 import torchaudio
 from tqdm import tqdm
-
+import librosa
 from utils.config_utils import read_full_config
 from utils.wav2F0 import PITCH_EXTRACTORS_NAME_TO_ID, get_pitch
 from utils.wav2mel import PitchAdjustableMelSpectrogram
@@ -31,7 +31,8 @@ def wav2spec(config: dict, source: pathlib.Path, save_path: pathlib.Path) -> Tup
         n_mels=config['audio_num_mel_bins'],
     )
     try:
-        audio, sr = torchaudio.load(source)
+        audio_np, sr = librosa.load(source, sr=None, mono=True) 
+        audio = torch.from_numpy(audio_np).unsqueeze(0)
         pe_name = config['pe']
         pe_id = PITCH_EXTRACTORS_NAME_TO_ID[pe_name]
         if sr > config['audio_sample_rate']:
@@ -42,7 +43,7 @@ def wav2spec(config: dict, source: pathlib.Path, save_path: pathlib.Path) -> Tup
         elif sr < config['audio_sample_rate']:
             return False, f"Error: sample rate mismatching in \'{source}\' ({sr} != {config['audio_sample_rate']})."
         mel = dynamic_range_compression_torch(mel_spec_transform(audio))
-        f0, uv = get_pitch(pe_name, audio.numpy()[0], length=len(mel[0].T), hparams=config, interp_uv=True)
+        f0, uv = get_pitch(pe_name, audio_np, length=len(mel[0].T), hparams=config, interp_uv=True)
         if f0 is None:
             return False, f"Error: failed to get pitch from \'{source}\'."
         np.savez(save_path, audio=audio[0].numpy(), mel=mel[0].T, f0=f0, uv=uv, pe=pe_id)
