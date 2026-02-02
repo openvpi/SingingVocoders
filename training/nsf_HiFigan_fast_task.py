@@ -331,11 +331,23 @@ class nsf_HiFigan(GanBaseTask):
             'audio_shift_ab': wav_shift_ab
         }
 
-    def Dforward(self, Goutput):
-        mrd_out, mrd_feature = self.discriminator['mrd'](Goutput)
-        mpd_out, mpd_feature = self.discriminator['mpd'](Goutput)
+    def Dforward(self, Goutput, infer_last_layer=True):
+        mrd_out, mrd_feature = self.discriminator['mrd'](Goutput, infer_last_layer=infer_last_layer)
+        mpd_out, mpd_feature = self.discriminator['mpd'](Goutput, infer_last_layer=infer_last_layer)
         return (mrd_out, mrd_feature), (mpd_out, mpd_feature)
-
+    
+    def D2forward(self, audio_fake, audio_true):
+        audio = torch.cat([audio_fake, audio_true], dim=0)
+        
+        mrd_out, mrd_feature = self.discriminator['mrd'](audio)
+        mpd_out, mpd_feature = self.discriminator['mpd'](audio)
+        
+        target_fake = torch.zeros(audio_fake.size(0), device=audio_fake.device)
+        target_true = torch.ones(audio_true.size(0), device=audio_true.device)
+        target = torch.cat([target_fake, target_true], dim=0)
+        
+        return mrd_out, mpd_out, target
+        
     def _training_step(self, sample, batch_idx):
         """
         :return: total loss: torch.Tensor, loss_log: dict, other_log: dict
@@ -364,9 +376,8 @@ class nsf_HiFigan(GanBaseTask):
         # forward generator end
         
         # opt discriminator start
-        Dfake = self.Dforward(Goutput=audio_fake.detach())  # y_g_hat =Goutput
-        Dtrue = self.Dforward(Goutput=sample['audio'])  # y =sample['audio']
-        Dloss, Dlog = self.mix_loss.Dloss(Dfake=Dfake, Dtrue=Dtrue)
+        mrd_out, mpd_out, target = self.D2forward(audio_fake=audio_fake.detach(), audio_true=sample['audio'])
+        Dloss, Dlog = self.mix_loss.D2loss(mrd_out, mpd_out, target)
         log_dict.update(Dlog)
 
         opt_d.zero_grad()  # clean discriminator grad
@@ -381,7 +392,7 @@ class nsf_HiFigan(GanBaseTask):
                 
         # opt generator start
         GDfake = self.Dforward(Goutput=audio_fake)
-        GDtrue = self.Dforward(Goutput=sample['audio'])
+        GDtrue = self.Dforward(Goutput=sample['audio'], infer_last_layer=False)
         GDloss, GDlog = self.mix_loss.GDloss(GDfake=GDfake, GDtrue=GDtrue)
         log_dict.update(GDlog)
         if pc_aug:

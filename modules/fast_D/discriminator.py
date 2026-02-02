@@ -70,10 +70,11 @@ class LYNXNet2Block(nn.Module):
             nn.Linear(dim, dim),
         )
 
-    def forward(self, x):
-        norm_x = F.rms_norm(x, (x.size(-1), ))
+    def forward(self, x, norm_x=None):
+        if norm_x is None:
+            norm_x = F.rms_norm(x, (x.size(-1), ))
         x = x + self.net(norm_x)
-        return x, norm_x
+        return x
 
 
 class FastPD(torch.nn.Module):
@@ -95,7 +96,7 @@ class FastPD(torch.nn.Module):
         )
         self.post = nn.Linear(init_channel * np.prod(strides), 1)
 
-    def forward(self, x):
+    def forward(self, x, infer_last_layer=True):
         fmap = []
 
         b, _, t = x.shape
@@ -107,9 +108,12 @@ class FastPD(torch.nn.Module):
         for i, layer in enumerate(self.residual_layers):
             if i > 0 and self.strides[i] > 1:
                 x = x.view(b * self.period, -1, x.size(2) * self.strides[i])
-            x, norm_x = layer(x)
+            norm_x = F.rms_norm(x, (x.size(-1), ))
             if i > 0:
                 fmap.append(norm_x.view(b, -1))
+            if not infer_last_layer and i == len(self.residual_layers) - 1:
+                return norm_x, fmap
+            x = layer(x, norm_x)
         x = F.rms_norm(x, (x.size(-1), ))
         x = self.post(x)
         x = x.view(b, -1)
@@ -126,12 +130,12 @@ class FastMPD(torch.nn.Module):
             self.discriminators.append(
                 FastPD(period, init_channel, strides, kernel_size))
 
-    def forward(self, y):
+    def forward(self, y, infer_last_layer=True):
         y_d_rs = []
         fmap_rs = []
 
         for i, d in enumerate(self.discriminators):
-            y_d_r, fmap_r = d(y)
+            y_d_r, fmap_r = d(y, infer_last_layer=infer_last_layer)
             y_d_rs.append(y_d_r)
             fmap_rs.append(fmap_r)
 
@@ -149,10 +153,11 @@ class ResBlock(nn.Module):
             nn.Linear(dim, dim),
         )
 
-    def forward(self, x):
-        norm_x = F.rms_norm(x, (x.size(-1), ))
+    def forward(self, x, norm_x=None):
+        if norm_x is None:
+            norm_x = F.rms_norm(x, (x.size(-1), ))
         x = x + self.net(norm_x)
-        return x, norm_x
+        return x
 
 
 class FastSpecD(nn.Module):
@@ -172,7 +177,7 @@ class FastSpecD(nn.Module):
             self.layers.append(ResBlock(init_channel * np.prod(strides[: i + 1]), use_dwconv=False))
         self.post = nn.Linear(init_channel * self.expansion, 1)
 
-    def forward(self, x):
+    def forward(self, x, infer_last_layer=True):
         fmap = []
 
         x = x.squeeze(1)
@@ -188,9 +193,12 @@ class FastSpecD(nn.Module):
         for i, layer in enumerate(self.layers):
             if i > 0:
                 x = x.view(b, f, -1, x.size(3) * self.strides[i])
-            x, norm_x = layer(x)
+            norm_x = F.rms_norm(x, (x.size(-1), ))
             if i > 0:
                 fmap.append(norm_x)
+            if not infer_last_layer and i == len(self.layers) - 1:
+                return norm_x, fmap
+            x = layer(x, norm_x)
         x = F.rms_norm(x, (x.size(-1), ))
         x = self.post(x)
 
@@ -206,13 +214,13 @@ class FastMRD(torch.nn.Module):
             self.discriminators.append(
                FastSpecD(init_channel, strides, i[0], i[1], i[2], window))
 
-    def forward(self, y,):
+    def forward(self, y, infer_last_layer=True):
         y_d_rs = []
 
         fmap_rs = []
 
         for i, d in enumerate(self.discriminators):
-            y_d_r, fmap_r = d(y)
+            y_d_r, fmap_r = d(y, infer_last_layer=infer_last_layer)
 
             y_d_rs.append(y_d_r)
             fmap_rs.append(fmap_r)

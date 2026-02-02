@@ -47,7 +47,32 @@ class univloss(nn.Module):
         loss = mrdloss + mpdloss
         return loss, {'DmrdlossF': mrdglosses, 'DmrdlossT': mrdrlosses, 'DmpdlossT': mpdrlosses,
                       'DmpdlossF': mpdglosses}
-
+    
+    def D2loss(self, mrd_out, mpd_out, target):
+        b = (target < 1).sum()
+        loss = 0
+        
+        mrdrlosses = 0
+        mrdglosses = 0
+        for d in mrd_out:
+            d = d.view(d.size(0), -1)
+            mse = torch.mean((d - target.unsqueeze(1)) ** 2, dim=1)
+            loss += mse.mean()
+            mrdrlosses += mse[b:].mean().item()
+            mrdglosses += mse[:b].mean().item()
+        
+        mpdrlosses = 0
+        mpdglosses = 0
+        for d in mpd_out:
+            d = d.view(d.size(0), -1)
+            mse = torch.mean((d - target.unsqueeze(1)) ** 2, dim=1)
+            loss += mse.mean()
+            mpdrlosses += mse[b:].mean().item()
+            mpdglosses += mse[:b].mean().item()
+        
+        return loss, {'DmrdlossF': mrdglosses, 'DmrdlossT': mrdrlosses, 'DmpdlossT': mpdrlosses,
+                      'DmpdlossF': mpdglosses}
+                      
     def feature_loss(self, fmap_r, fmap_g):
         loss = 0
         for dr, dg in zip(fmap_r, fmap_g):
