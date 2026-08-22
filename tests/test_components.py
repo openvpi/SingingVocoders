@@ -29,6 +29,10 @@ class FlexibleGenerator(GeneratorComponent):
         return GeneratorOutput(batch.audio)
 
 
+class MissingForwardGenerator(GeneratorComponent):
+    pass
+
+
 def test_component_factory_checks_constructor_signature() -> None:
     registry = ComponentRegistry()
     registry.register("test_generator", ExampleGenerator)
@@ -54,6 +58,13 @@ def test_component_factory_supports_dotted_targets_and_explicit_kwargs() -> None
     )
     assert isinstance(component, FlexibleGenerator)
     assert component.options == {"experiment": {"variant": "wide"}}
+
+
+def test_component_factory_rejects_an_inherited_contract_stub() -> None:
+    registry = ComponentRegistry()
+    registry.register("missing_forward", MissingForwardGenerator)
+    with pytest.raises(TypeError, match="does not implement forward"):
+        registry.build(ComponentSpec(target="missing_forward"), GeneratorComponent)
 
 
 def test_batch_moves_all_tensor_fields() -> None:

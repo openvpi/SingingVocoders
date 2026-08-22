@@ -8,7 +8,6 @@ import torch.distributed
 from lightning_fabric import Fabric
 from lightning_fabric.utilities.seed import seed_everything
 from torch import nn
-from torch.utils.data.distributed import DistributedSampler
 
 from singing_vocoders.checkpoint import CheckpointManager
 from singing_vocoders.components import (
@@ -20,6 +19,7 @@ from singing_vocoders.components import (
     GeneratorOutput,
 )
 from singing_vocoders.config.schema import RecipeConfig
+from singing_vocoders.data.runtime import EpochShuffleSampler
 from singing_vocoders.engine import FabricGanEngine
 from singing_vocoders.task import VocoderTask
 
@@ -104,14 +104,24 @@ def worker(fabric: Fabric, marker: Path) -> None:
         raise RuntimeError("logical step diverged")
     if any(state.successful_updates != 1 for state in engine.state.optimizers.values()):
         raise RuntimeError("optimizer update counters diverged")
-    sampler = DistributedSampler(
-        range(8),
+    sampler = EpochShuffleSampler(
+        5,
+        1234,
         num_replicas=fabric.world_size,
         rank=fabric.global_rank,
-        shuffle=True,
-        seed=1234,
     )
     sampler.set_epoch(engine.state.epoch)
+    local_samples = list(sampler)
+    gathered_samples: list[list[tuple[int, int]] | None] = [None] * fabric.world_size
+    torch.distributed.all_gather_object(gathered_samples, local_samples)
+    combined = sorted(
+        (sample for rank_samples in gathered_samples for sample in rank_samples or []),
+        key=lambda sample: sample[1],
+    )
+    if [position for _, position in combined] != list(range(6)):
+        raise RuntimeError("distributed sampler logical positions diverged")
+    if len({index for index, _ in combined}) != 5:
+        raise RuntimeError("distributed sampler partition diverged")
     checkpoint_dir = marker.parent / "checkpoint"
     manager = CheckpointManager(
         checkpoint_dir,
@@ -122,16 +132,17 @@ def worker(fabric: Fabric, marker: Path) -> None:
     )
     checkpoint = manager.save(engine, sampler)
     restored = FabricGanEngine(fabric, VocoderTask(config(), registry))
-    restored_sampler = DistributedSampler(
-        range(8),
+    restored_sampler = EpochShuffleSampler(
+        5,
+        1234,
         num_replicas=fabric.world_size,
         rank=fabric.global_rank,
-        shuffle=True,
-        seed=1234,
     )
     manager.load(restored, checkpoint, restored_sampler)
     if restored.state.state_dict() != engine.state.state_dict():
         raise RuntimeError("DDP checkpoint state diverged")
+    if restored_sampler.state_dict() != sampler.state_dict():
+        raise RuntimeError("DDP sampler state diverged")
     fabric.barrier()
     if fabric.global_rank == 0:
         if [path.name for path in checkpoint_dir.glob("*.ckpt")] != ["step-00000002.ckpt"]:
