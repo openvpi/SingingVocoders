@@ -1,45 +1,41 @@
 from __future__ import annotations
 
+from functools import lru_cache
+from typing import cast
+
 import numpy as np
 import parselmouth
 import torch
-import torch.nn.functional as torch_functional
-from librosa.filters import mel as librosa_mel
 from numpy.typing import NDArray
 
 from singing_vocoders.config.schema import FeatureConfig
+from singing_vocoders.modules.features import LogMelSpectrogram
 
 PITCH_EXTRACTOR_IDS = {"parselmouth": 0, "harvest": 1}
+FEATURE_IMPLEMENTATION_VERSION = 3
+
+
+def feature_implementation(config: FeatureConfig) -> dict[str, object]:
+    return {
+        "name": "singing_vocoders.data.features",
+        "version": FEATURE_IMPLEMENTATION_VERSION,
+        "audio": {"decoder": "soundfile", "resampler": "librosa-soxr-hq", "version": 2},
+        "mel": {"implementation": "shared-log-mel-module", "version": 3},
+        "pitch": {"implementation": config.pitch_extractor, "version": 1},
+    }
+
+
+@lru_cache(maxsize=16)
+def _mel_extractor(config: FeatureConfig) -> LogMelSpectrogram:
+    return LogMelSpectrogram(config).eval()
 
 
 def mel_spectrogram(audio: NDArray[np.float32], config: FeatureConfig) -> NDArray[np.float32]:
-    waveform = torch.from_numpy(audio).float().unsqueeze(0)
-    left = (config.win_size - config.hop_size) // 2
-    right = (config.win_size - config.hop_size + 1) // 2
-    waveform = torch_functional.pad(waveform.unsqueeze(1), (left, right), mode="reflect").squeeze(1)
-    window = torch.hann_window(config.win_size)
-    magnitude = torch.stft(
-        waveform,
-        config.n_fft,
-        hop_length=config.hop_size,
-        win_length=config.win_size,
-        window=window,
-        center=False,
-        normalized=False,
-        onesided=True,
-        return_complex=True,
-    ).abs()
-    basis = torch.from_numpy(
-        librosa_mel(
-            sr=config.sample_rate,
-            n_fft=config.n_fft,
-            n_mels=config.num_mels,
-            fmin=config.fmin,
-            fmax=config.fmax,
-        )
-    ).float()
-    mel = torch.matmul(basis, magnitude).clamp_min_(1e-5).log_()
-    return mel.squeeze(0).transpose(0, 1).numpy().astype(np.float32, copy=False)
+    waveform = torch.from_numpy(audio).unsqueeze(0)
+    with torch.inference_mode():
+        mel = _mel_extractor(config)(waveform)
+    result = mel.squeeze(0).transpose(0, 1).numpy().astype(np.float32, copy=False)
+    return cast(NDArray[np.float32], result)
 
 
 def _interpolate_f0(
