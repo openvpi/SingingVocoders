@@ -1,135 +1,103 @@
 # SingingVocoders
-A collection of neural vocoders suitable for singing voice synthesis tasks.
 
-# If you have any questions, please open an issue.
+SingingVocoders is a neural vocoder training framework for singing voice audio. Its runtime is built on Lightning Fabric and natively supports multi-model GAN training, multiple optimizers, alternating updates, warm-up phases, one-step joint optimization, gradient accumulation, AMP, and DDP. It does not depend on the PyTorch Lightning Trainer.
 
-# Quick Start
+[中文文档](README.md)
 
-## Preprocessing
-Run the following preprocessing script
-```sh
-python process.py --config (your config path) --num_cpu (Number of cpu threads used in preprocessing)  --strx (1 for a forced absolute path 0 for a relative path)
-```
-The following configuration items are what you need to change during preprocessing
-```yaml
+## Installation
 
-data_input_path: []  # the path for your data
+Create Windows environments from the Conda explicit lock and the SHA-256-verified Python lock. The script refuses to touch an existing environment. It removes the new environment only after Conda creation succeeded and the subsequent Python installation failed; a failed Conda creation never triggers deletion by environment name:
 
-data_out_path: []  # the path for the preprocessed output
-
-val_num: 10  # the number of validation audio
-```
-An example
-```yaml
-data_input_path: ['wav/in1','wav/in2'] 
-
-data_out_path: ['wav/out1','wav/out2']
-val_num: 5 # This is the number of valves you want. 
-
- # (The files are automatically extracted during preprocessing.)
-
- # (The paths in the two lists are one-to-one, so the number should be the same.)
-
- # (Then, the preprocessor scans all .wav and .flac files, including subfolders.)
-
- # (Normally, there are only these three to change.)
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\create_env.ps1
+conda activate singing-vocoders-refactor
 ```
 
-## Training
-Adjust config according to your GPU memory
-(mini_nsf and pc_aug is enabled by default)
+The environment pins Python 3.11, PyTorch/Torchaudio 2.11.0 with CUDA 13.0, Lightning Fabric 2.6.5, and NumPy 1.26.4. `conda-win-64.lock` fixes Conda URLs and SHA-256 values; `pylock.win-64.toml` fixes every Python artifact and SHA-256. `environment.yml` is a solver-based development specification, not the reproducible installation entry point. The package installs exactly one command: `vocoder`.
 
-For 24GB memory (default)
-```yaml
-crop_mel_frames: 48
-batch_size: 10
-pc_aug_rate: 0.5
-```
-For 16GB memory (need manual editing)
-```yaml
-crop_mel_frames: 32
-batch_size: 10
-pc_aug_rate: 0.4
-```
-Run the following training script
-```sh
-python train.py --config (your config path) --exp_name (your ckpt name) --work_dir (working directory, optional)
-```
-Configuration items under test
-```yaml
-use_stftloss: false  (Whether to use stft loss)
-lab_aux_melloss: 45
-lab_aux_stftloss: 2.5 (The mixing ratio of the two losses)
-```
-If you have other needs, you can modify the stftloss related parameters
+## Quick start
 
-## Export the checkpoint
-if you finish training you can use this script to export the diffsinger vocoder checkpoint
-```sh
-python export_ckpt.py --ckpt_path (your ckpt path)  --save_path (output ckpt path) --work_dir (working directory, optional)
+List and validate recipes:
+
+```powershell
+vocoder recipes list
+vocoder config validate pc-nsf-hifigan
 ```
 
-# Online data augmentation (recommend)
-add config
-```yaml
-key_aug: true (Do augment during training)
-key_aug_prob: 0.5 (Data augmentation probability)
-aug_min: 0.9  (Minimum f0 adjustment multiplier)
-aug_max: 1.4   (Maximum f0 adjustment multiplier)
+Preprocess a recursive WAV dataset:
+
+```powershell
+vocoder preprocess pc-nsf-hifigan `
+  --source D:\path\to\wavs `
+  --output data\my-dataset
 ```
-Note that data augmentation may damage the sound quality!
 
-# Note
-Because of some problems the actual number of steps is half of what it shows
+Preprocessing publishes through a sibling staging directory. An existing output can be replaced only if it fully validates as a dataset in the current format; ordinary directories, incomplete datasets, symbolic links, and junctions are rejected.
 
-To fine-tune the nsf-hifigan vocoder, please download and unzip the weights in [releases](https://github.com/openvpi/SingingVocoders/releases), and modify the 'finetune_ckpt_path' item in [ft_hifigan.yaml](configs%2Fft_hifigan.yaml) to the checkpoint file.
+Repeated `--set key=value` options override resolved recipe values. Every training invocation creates a new run directory and refuses to overwrite an existing result:
 
-For fine-tuning please use 44100 Hz samplerate audio and do not modify other mel parameters unless you know exactly what you are doing
+```powershell
+vocoder train pc-nsf-hifigan `
+  --set data.processed_dir=data/my-dataset `
+  --set runtime.precision=bf16-mixed
+```
 
-How to use the fine-tuning function is recommended to refer to the openvpi/DiffSinger [project documentation](https://github.com/openvpi/DiffSinger/blob/main/docs/BestPractices.md#fine-tuning-and-parameter-freezing)
+Resume an exact versioned checkpoint:
 
-The exported weights can be used in project such as [DDSP-SVC](https://github.com/yxlllc/DDSP-SVC), [Diffusion-SVC](https://github.com/CNChTu/Diffusion-SVC), [so-vits-svc](https://github.com/svc-develop-team/so-vits-svc) and [DiffSinger (openvpi)](https://github.com/openvpi/DiffSinger)
+```powershell
+vocoder train pc-nsf-hifigan --resume experiments\run\step-00000500.ckpt
+```
 
-If you want to further export them to onnx format weights for use in [OpenUtau](https://github.com/stakira/OpenUtau), please use [this](https://github.com/openvpi/DiffSinger/blob/main/scripts/export.py) script
+Use warm-start for strict legacy Lightning or generator weights. Legacy optimizer, scaler, and step state are never inferred:
 
-The inheritance relationship of configuration items in the configuration file is: [base.yaml](configs%2Fbase.yaml) -> [base_hifi.yaml](configs%2Fbase_hifi.yaml) -> [ft_hifigan.yaml](configs%2Fft_hifigan.yaml)
+```powershell
+vocoder train pc-nsf-hifigan `
+  --warm-start pretrained\model.ckpt `
+  --warm-start-scope all
+```
 
-A small number of steps of fine-tuning can freeze the mpd module.
+Validate, inspect, and export:
 
-It is not recommended to use bf16, as it may cause sound quality problems.
+```powershell
+vocoder validate pc-nsf-hifigan experiments\run\step-00001000.ckpt
+vocoder checkpoint inspect experiments\run\step-00001000.ckpt
+vocoder export experiments\run\step-00001000.ckpt exports\model.pt
+```
 
-Almost 2k steps is enough for fine-tuning of small dataset.
+Versioned checkpoints always export with their embedded configuration. Legacy checkpoints additionally require `--recipe pc-nsf-hifigan`. DiffSinger export produces a `{"generator": state_dict}` checkpoint and a sibling `config.json`.
 
-# Other models
-[HiFivae.yaml](configs%2FHiFivae.yaml) hifivae.yaml training vae model
+## Built-in recipes
 
-[base_hifi_chroma.yaml](configs%2Fbase_hifi_chroma.yaml) training ignore 8th degree nsf hifigan
+- `nsf-hifigan`
+- `fast-nsf-hifigan`
+- `one-step-nsf-hifigan`
+- `hifivae`
+- `ddspgan`
+- `lvc-ddspgan`
+- `univnet`
+- `ddsp-univnet`
+- `nsf-univnet`
+- `nsf-univnet-msd`
+- `pc-nsf-hifigan`, a PC-NSF overlay on `nsf-hifigan`
 
-[base_hifi.yaml](configs%2Fbase_hifi.yaml) Training nsf hifigan
+Configuration merges `bases` from left to right, then the leaf file, and finally CLI dotlist overrides. Generator and Discriminator are reflective `target + params` components. All other subsystems use typed configurations and explicit registries. Unknown fields, inheritance cycles, unresolved interpolations, missing parameters, and unsupported extra parameters fail immediately.
 
-[base_ddspgan.yaml](configs%2Fbase_ddspgan.yaml) Training ddsp model with discriminator
+One complete recipe iteration is one `logical_step`. Checkpoints separately record attempted and successful updates for every optimizer, so step counts no longer double for G/D updates.
 
-[ddsp_univnet.yaml](configs%2Fddsp_univnet.yaml) Training ddsp mixed univnet model
+Additional documentation:
 
-[nsf_univnet.yaml](configs%2Fnsf_univnet.yaml) Training univnet with nsf (recommended)
+- [Architecture](docs/architecture.md)
+- [Configuration and recipes](docs/configuration.md)
+- [Checkpointing and resume](docs/checkpoints.md)
 
-[univnet.yaml](configs%2Funivnet.yaml) Training original univnet
+## Development checks
 
-[lvc_base_ddspgan.yaml](configs%2Flvc_base_ddspgan.yaml) Training ddsp model with lvc filters
+```powershell
+ruff check .
+ruff format --check .
+mypy
+pytest
+pip check
+```
 
-# Special Statements
-
-We regret to publish a verified Registry of Hostile Conduct (shown as below). This registry documents individuals/entities who have engaged in long-term destructive activities against the development team.
-
-We solemnly declare:
-
-1. Strongly recommend all users review this registry before downloading and using this vocoder
-2. No technical or legal restrictions are currently imposed on listed parties, as the vocoder is
-   still licensed under CC BY-NC-SA 4.0
-3. Reserve the right to apply further restrictions in case of persistent malicious acts
-
-## Registry of Hostile Conduct
-
-|       Name       | Identifiers                                                                    | Reason                                                                                                                                                                                                                                                   |
-|:----------------:|:-------------------------------------------------------------------------------|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| 旋转_turning_point | QQ: 2673587414;<br/>Bilibili UID: 285801087;<br/>Discord username: colstone233 | Engaging in long-term hostile and personal attacks against developers, repeatedly spreading false information about DiffSinger and the development team, and interfering with the development process of the vocoder and other projects in the community |
+The Fabric engine supports DDP. A two-process CPU/Gloo test on Windows covers synchronization, accumulation, counters, single-rank checkpoint writing, and resume. Multi-GPU acceptance should run in a separate environment.
