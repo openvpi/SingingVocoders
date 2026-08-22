@@ -1,35 +1,50 @@
 from __future__ import annotations
 
-from typing import Any
+import math
+from collections.abc import Sequence
+from typing import Any, Literal, overload
 
 import torch
+from torch import Tensor
 
 from singing_vocoders.components.contracts import (
     Batch,
-    DiscriminatorComponent,
-    DiscriminatorOutput,
     GeneratorComponent,
     GeneratorOutput,
 )
 from singing_vocoders.components.factory import ComponentRegistry
-from singing_vocoders.models.ddsp_univnet.ddspunivnet import ddspUnivNet as LegacyDDSPUnivNet
-from singing_vocoders.models.ddspgan.ddspgan import DDSPgan as LegacyDDSPGenerator
-from singing_vocoders.models.HiFivae.models import AttrDict as VAEAttrDict
-from singing_vocoders.models.HiFivae.models import HiFivae as LegacyHiFiVAE
-from singing_vocoders.models.lvc_ddspgan.lvc_ddspgan import DDSPgan as LegacyLVCDDSPGenerator
-from singing_vocoders.models.nsf_HiFigan.models import AttrDict as NSFAttrDict
-from singing_vocoders.models.nsf_HiFigan.models import Generator as LegacyNSFGenerator
-from singing_vocoders.models.nsf_HiFigan.models import MultiPeriodDiscriminator as LegacyMPD
-from singing_vocoders.models.nsf_HiFigan.models import MultiScaleDiscriminator as LegacyMSD
-from singing_vocoders.models.nsf_univnet.nsfunivnet import nsfUnivNet as LegacyNSFUnivNet
-from singing_vocoders.models.univnet.univnet import UnivNet as LegacyUnivNet
-from singing_vocoders.modules.fast_D.discriminator import FastMPD as LegacyFastMPD
-from singing_vocoders.modules.fast_D.discriminator import FastMRD as LegacyFastMRD
-from singing_vocoders.modules.univ_D.discriminator import MultiPeriodDiscriminator as LegacyUnivMPD
-from singing_vocoders.modules.univ_D.discriminator import MultiResSpecDiscriminator as LegacyMRD
+from singing_vocoders.modules.backbones.ddsp_gan import DDSPGANBackbone
+from singing_vocoders.modules.backbones.ddsp_univnet import DDSPUnivNetBackbone
+from singing_vocoders.modules.backbones.hifivae import HiFiVAE as HiFiVAEBackbone
+from singing_vocoders.modules.backbones.lvc_ddsp_gan import LVCDDSPGANBackbone
+from singing_vocoders.modules.backbones.nsf_hifigan import AttributeDict
+from singing_vocoders.modules.backbones.nsf_hifigan import NSFHiFiGAN as NSFHiFiGANBackbone
+from singing_vocoders.modules.backbones.nsf_univnet import NSFUnivNet as NSFUnivNetBackbone
+from singing_vocoders.modules.backbones.univnet import (
+    UnivNet as UnivNetBackbone,
+)
+from singing_vocoders.modules.backbones.univnet import (
+    UnivNetArchitecture,
+)
+from singing_vocoders.modules.discriminators.fast import (
+    FastMultiPeriodDiscriminator,
+    FastMultiResolutionDiscriminator,
+)
+from singing_vocoders.modules.discriminators.hifigan import (
+    MultiPeriodDiscriminator,
+    MultiScaleDiscriminator,
+)
+from singing_vocoders.modules.discriminators.univnet import (
+    MultiPeriodDiscriminator as UnivMultiPeriodDiscriminator,
+)
+from singing_vocoders.modules.discriminators.univnet import (
+    MultiResolutionSpectrogramDiscriminator as MultiResolutionDiscriminator,
+)
+
+DDSPType = Literal["Sins", "CombSub"]
 
 
-def _legacy_config(
+def _backbone_config(
     sample_rate: int,
     num_mels: int,
     hop_size: int,
@@ -45,193 +60,433 @@ def _legacy_config(
     }
 
 
-class NSFHiFiGANGenerator(LegacyNSFGenerator, GeneratorComponent):
-    def __init__(self, **params: Any) -> None:
-        values = dict(params)
-        values.setdefault("mini_nsf", False)
-        values.setdefault("noise_sigma", 0.0)
-        super().__init__(NSFAttrDict(values))
+def _univnet_config(
+    *,
+    sample_rate: int,
+    num_mels: int,
+    hop_size: int,
+    win_size: int,
+    waveform_upsample_rates: Sequence[int],
+    noise_channels: int,
+    output_channels: int,
+    hidden_channels: int,
+    lvc_layers_per_block: int,
+    lvc_kernel_size: int,
+    kernel_predictor_hidden_channels: int,
+    kernel_predictor_kernel_size: int,
+    kernel_predictor_dropout: float,
+    mel_upsample_factor: int,
+) -> dict[str, Any]:
+    if isinstance(output_channels, bool) or not isinstance(output_channels, int):
+        raise TypeError("output_channels must be an integer")
+    if output_channels != 1:
+        raise ValueError("vocoder generators require output_channels=1")
+    return _backbone_config(
+        sample_rate,
+        num_mels,
+        hop_size,
+        win_size,
+        {
+            "waveform_upsample_rates": tuple(waveform_upsample_rates),
+            "noise_channels": noise_channels,
+            "output_channels": output_channels,
+            "hidden_channels": hidden_channels,
+            "lvc_layers_per_block": lvc_layers_per_block,
+            "lvc_kernel_size": lvc_kernel_size,
+            "kernel_predictor_hidden_channels": kernel_predictor_hidden_channels,
+            "kernel_predictor_kernel_size": kernel_predictor_kernel_size,
+            "kernel_predictor_dropout": kernel_predictor_dropout,
+            "mel_upsample_factor": mel_upsample_factor,
+        },
+    )
+
+
+def _noise_input(batch: Batch, architecture: UnivNetArchitecture) -> Tensor:
+    return torch.randn(
+        batch.mel.shape[0],
+        architecture.noise_channels,
+        batch.mel.shape[-1] * architecture.mel_upsample_factor,
+        device=batch.mel.device,
+        dtype=batch.mel.dtype,
+    )
+
+
+class NSFHiFiGANGenerator(NSFHiFiGANBackbone, GeneratorComponent):
+    supported_objectives = frozenset({"hifigan", "one_step"})
+
+    def __init__(
+        self,
+        sampling_rate: int,
+        num_mels: int,
+        hop_size: int,
+        upsample_rates: Sequence[int],
+        upsample_kernel_sizes: Sequence[int],
+        upsample_initial_channel: int,
+        resblock_kernel_sizes: Sequence[int],
+        resblock_dilation_sizes: Sequence[Sequence[int]],
+        resblock: Literal["1", "2"],
+        mini_nsf: bool = False,
+        noise_sigma: float | None = 0.0,
+    ) -> None:
+        rates = tuple(upsample_rates)
+        kernels = tuple(upsample_kernel_sizes)
+        residual_kernels = tuple(resblock_kernel_sizes)
+        residual_dilations = tuple(tuple(group) for group in resblock_dilation_sizes)
+        if resblock not in {"1", "2"}:
+            raise ValueError("resblock must be '1' or '2'")
+        if not rates or len(rates) != len(kernels):
+            raise ValueError("upsample rates and kernels must be non-empty and equally sized")
+        if mini_nsf and len(rates) < 2:
+            raise ValueError("MiniNSF requires at least two upsampling stages")
+        if math.prod(rates) != hop_size:
+            raise ValueError("product of upsample_rates must equal hop_size")
+        if not residual_kernels or len(residual_kernels) != len(residual_dilations):
+            raise ValueError(
+                "residual kernels and dilation groups must be non-empty and equally sized"
+            )
+        if any(value <= 0 for value in (*rates, *kernels, *residual_kernels)):
+            raise ValueError("NSF architecture sizes must be positive")
+        if any(
+            kernel < rate or (kernel - rate) % 2
+            for rate, kernel in zip(rates, kernels, strict=True)
+        ):
+            raise ValueError(
+                "each upsample kernel must be at least its rate and differ from it by an even value"
+            )
+        if any(kernel % 2 == 0 for kernel in residual_kernels):
+            raise ValueError("residual kernel sizes must be odd")
+        if any(
+            not group or any(dilation <= 0 for dilation in group) for group in residual_dilations
+        ):
+            raise ValueError("residual dilation groups must contain positive values")
+        expected_dilations = 3 if resblock == "1" else 2
+        if any(len(group) != expected_dilations for group in residual_dilations):
+            raise ValueError(
+                f"resblock {resblock} requires {expected_dilations} dilations per residual block"
+            )
+        if min(sampling_rate, num_mels, hop_size, upsample_initial_channel) <= 0:
+            raise ValueError("NSF architecture sizes must be positive")
+        if noise_sigma is not None and noise_sigma < 0:
+            raise ValueError("noise_sigma must not be negative")
+        values = AttributeDict(
+            sampling_rate=sampling_rate,
+            num_mels=num_mels,
+            hop_size=hop_size,
+            upsample_rates=rates,
+            upsample_kernel_sizes=kernels,
+            upsample_initial_channel=upsample_initial_channel,
+            resblock_kernel_sizes=residual_kernels,
+            resblock_dilation_sizes=residual_dilations,
+            resblock=resblock,
+            mini_nsf=mini_nsf,
+            noise_sigma=noise_sigma,
+        )
+        super().__init__(values)
+
+    @overload
+    def forward(self, batch: Batch) -> GeneratorOutput: ...
+
+    @overload
+    def forward(self, batch: Tensor, f0: Tensor) -> Tensor: ...
+
+    def forward(
+        self,
+        batch: Batch | Tensor,
+        f0: Tensor | None = None,
+    ) -> GeneratorOutput | Tensor:
+        if isinstance(batch, Batch):
+            if f0 is not None:
+                raise TypeError("f0 must not be provided with a Batch")
+            return GeneratorOutput(super().forward(batch.mel, batch.f0))
+        if f0 is None:
+            raise TypeError("f0 is required with a mel tensor")
+        return super().forward(batch, f0)
+
+
+class HiFiVAEGenerator(GeneratorComponent):
+    supported_objectives = frozenset({"hifivae"})
+
+    def __init__(
+        self,
+        latent_channels: int,
+        hop_size: int,
+        upsample_rates: Sequence[int],
+        upsample_kernel_sizes: Sequence[int],
+        upsample_initial_channel: int,
+        resblock_kernel_sizes: Sequence[int],
+        resblock_dilation_sizes: Sequence[Sequence[int]],
+        resblock: Literal["1", "2"],
+    ) -> None:
+        super().__init__()
+        rates = tuple(upsample_rates)
+        if math.prod(rates) != hop_size:
+            raise ValueError("product of upsample_rates must equal hop_size")
+        self.backbone = HiFiVAEBackbone(
+            latent_channels=latent_channels,
+            upsample_rates=rates,
+            upsample_kernel_sizes=tuple(upsample_kernel_sizes),
+            initial_channels=upsample_initial_channel,
+            residual_kernel_sizes=tuple(resblock_kernel_sizes),
+            residual_dilation_sizes=tuple(tuple(group) for group in resblock_dilation_sizes),
+            residual_block=resblock,
+        )
 
     def forward(self, batch: Batch) -> GeneratorOutput:
-        return GeneratorOutput(super().forward(x=batch.mel, f0=batch.f0))
-
-
-class HiFiVAEGenerator(LegacyHiFiVAE, GeneratorComponent):
-    def __init__(self, **params: Any) -> None:
-        super().__init__(VAEAttrDict(dict(params)))
-
-    def forward(self, batch: Batch) -> GeneratorOutput:
-        audio, latent, mean, log_scale = super().forward(x=batch.audio)
+        audio, latent, mean, log_scale = self.backbone(batch.audio)
         return GeneratorOutput(
             audio=audio,
             aux={"latent": latent, "mean": mean, "log_scale": log_scale},
         )
 
 
-class DDSPGenerator(LegacyDDSPGenerator, GeneratorComponent):
+class DDSPGenerator(GeneratorComponent):
+    supported_objectives = frozenset({"ddsp"})
+
     def __init__(
         self,
+        *,
         sample_rate: int,
         num_mels: int,
         hop_size: int,
         win_size: int,
-        **model_args: Any,
+        type: DDSPType,
+        use_mean_filter: bool,
+        n_mag_noise: int,
+        n_harmonics: int | None = None,
+        n_mag_harmonic: int | None = None,
     ) -> None:
-        super().__init__(_legacy_config(sample_rate, num_mels, hop_size, win_size, model_args))
-
-    def forward(self, batch: Batch) -> GeneratorOutput:
-        result = super().forward(mel=batch.mel, f0=batch.f0)
-        if isinstance(result, tuple):
-            audio, *parts = result
-            return GeneratorOutput(
-                audio, {f"part_{index}": value for index, value in enumerate(parts)}
-            )
-        return GeneratorOutput(result)
-
-
-class LVCDDSPGenerator(LegacyLVCDDSPGenerator, GeneratorComponent):
-    def __init__(
-        self,
-        sample_rate: int,
-        num_mels: int,
-        hop_size: int,
-        win_size: int,
-        **model_args: Any,
-    ) -> None:
-        super().__init__(_legacy_config(sample_rate, num_mels, hop_size, win_size, model_args))
-
-    def forward(self, batch: Batch) -> GeneratorOutput:
-        result = super().forward(mel=batch.mel, f0=batch.f0)
-        if isinstance(result, tuple):
-            audio, *parts = result
-            return GeneratorOutput(
-                audio, {f"part_{index}": value for index, value in enumerate(parts)}
-            )
-        return GeneratorOutput(result)
-
-
-class UnivNetGenerator(LegacyUnivNet, GeneratorComponent):
-    def __init__(
-        self,
-        sample_rate: int,
-        num_mels: int,
-        hop_size: int,
-        win_size: int,
-        use_weight_norm: bool = True,
-        **model_args: Any,
-    ) -> None:
-        config = _legacy_config(sample_rate, num_mels, hop_size, win_size, model_args)
-        super().__init__(config, use_weight_norm=use_weight_norm)
-        self.noise_channels = int(model_args["cond_in_channels"])
-        self.upmel = model_args.get("upmel")
-
-    def forward(self, batch: Batch) -> GeneratorOutput:
-        frames = batch.mel.shape[-1] * (self.upmel or 1)
-        noise = torch.randn(
-            batch.mel.shape[0],
-            self.noise_channels,
-            frames,
-            device=batch.mel.device,
-            dtype=batch.mel.dtype,
+        super().__init__()
+        self.backbone = DDSPGANBackbone(
+            sample_rate=sample_rate,
+            num_mels=num_mels,
+            hop_size=hop_size,
+            win_size=win_size,
+            type=type,
+            use_mean_filter=use_mean_filter,
+            n_mag_noise=n_mag_noise,
+            n_harmonics=n_harmonics,
+            n_mag_harmonic=n_mag_harmonic,
         )
-        return GeneratorOutput(super().forward(x=noise, c=batch.mel))
+
+    def forward(self, batch: Batch) -> GeneratorOutput:
+        return GeneratorOutput(self.backbone(batch.mel, batch.f0))
 
 
-class DDSPUnivNetGenerator(LegacyDDSPUnivNet, GeneratorComponent):
+class LVCDDSPGenerator(GeneratorComponent):
+    supported_objectives = frozenset({"ddsp"})
+
+    def __init__(
+        self,
+        *,
+        sample_rate: int,
+        num_mels: int,
+        hop_size: int,
+        win_size: int,
+        type: DDSPType,
+        use_mean_filter: bool,
+        n_mag_noise: int,
+        noise_channels: int,
+        hidden_channels: int,
+        block_count: int,
+        layers_per_block: int,
+        convolution_kernel_size: int,
+        kernel_predictor_hidden_channels: int,
+        kernel_predictor_kernel_size: int,
+        kernel_predictor_dropout: float,
+        conditioning_upsample_factor: int,
+        n_harmonics: int | None = None,
+        n_mag_harmonic: int | None = None,
+    ) -> None:
+        super().__init__()
+        self.backbone = LVCDDSPGANBackbone(
+            sample_rate=sample_rate,
+            num_mels=num_mels,
+            hop_size=hop_size,
+            win_size=win_size,
+            type=type,
+            use_mean_filter=use_mean_filter,
+            n_mag_noise=n_mag_noise,
+            noise_channels=noise_channels,
+            hidden_channels=hidden_channels,
+            block_count=block_count,
+            layers_per_block=layers_per_block,
+            convolution_kernel_size=convolution_kernel_size,
+            kernel_predictor_hidden_channels=kernel_predictor_hidden_channels,
+            kernel_predictor_kernel_size=kernel_predictor_kernel_size,
+            kernel_predictor_dropout=kernel_predictor_dropout,
+            conditioning_upsample_factor=conditioning_upsample_factor,
+            n_harmonics=n_harmonics,
+            n_mag_harmonic=n_mag_harmonic,
+        )
+
+    def forward(self, batch: Batch) -> GeneratorOutput:
+        return GeneratorOutput(self.backbone(batch.mel, batch.f0))
+
+
+class UnivNetGenerator(GeneratorComponent):
+    supported_objectives = frozenset({"univnet"})
+
     def __init__(
         self,
         sample_rate: int,
         num_mels: int,
         hop_size: int,
         win_size: int,
-        use_weight_norm: bool = True,
-        **model_args: Any,
+        use_weight_norm: bool,
+        waveform_upsample_rates: Sequence[int],
+        noise_channels: int,
+        output_channels: int,
+        hidden_channels: int,
+        lvc_layers_per_block: int,
+        lvc_kernel_size: int,
+        kernel_predictor_hidden_channels: int,
+        kernel_predictor_kernel_size: int,
+        kernel_predictor_dropout: float,
+        mel_upsample_factor: int,
     ) -> None:
-        config = _legacy_config(sample_rate, num_mels, hop_size, win_size, model_args)
-        super().__init__(config, use_weight_norm=use_weight_norm)
-        self.noise_channels = int(model_args["cond_in_channels"])
-        self.upmel = model_args.get("upmel")
+        config = _univnet_config(
+            sample_rate=sample_rate,
+            num_mels=num_mels,
+            hop_size=hop_size,
+            win_size=win_size,
+            waveform_upsample_rates=waveform_upsample_rates,
+            noise_channels=noise_channels,
+            output_channels=output_channels,
+            hidden_channels=hidden_channels,
+            lvc_layers_per_block=lvc_layers_per_block,
+            lvc_kernel_size=lvc_kernel_size,
+            kernel_predictor_hidden_channels=kernel_predictor_hidden_channels,
+            kernel_predictor_kernel_size=kernel_predictor_kernel_size,
+            kernel_predictor_dropout=kernel_predictor_dropout,
+            mel_upsample_factor=mel_upsample_factor,
+        )
+        super().__init__()
+        self.backbone = UnivNetBackbone(config, use_weight_norm=use_weight_norm)
 
     def forward(self, batch: Batch) -> GeneratorOutput:
-        frames = batch.mel.shape[-1] * (self.upmel or 1)
-        noise = torch.randn(
-            batch.mel.shape[0],
-            self.noise_channels,
-            frames,
-            device=batch.mel.device,
-            dtype=batch.mel.dtype,
+        noise = _noise_input(batch, self.backbone.architecture)
+        return GeneratorOutput(self.backbone(noise, batch.mel))
+
+
+class DDSPUnivNetGenerator(GeneratorComponent):
+    supported_objectives = frozenset({"ddsp_univnet"})
+
+    def __init__(
+        self,
+        sample_rate: int,
+        num_mels: int,
+        hop_size: int,
+        win_size: int,
+        use_weight_norm: bool,
+        waveform_upsample_rates: Sequence[int],
+        noise_channels: int,
+        output_channels: int,
+        hidden_channels: int,
+        lvc_layers_per_block: int,
+        lvc_kernel_size: int,
+        kernel_predictor_hidden_channels: int,
+        kernel_predictor_kernel_size: int,
+        kernel_predictor_dropout: float,
+        mel_upsample_factor: int,
+        type: DDSPType,
+        use_mean_filter: bool,
+        n_mag_noise: int,
+        n_harmonics: int | None = None,
+        n_mag_harmonic: int | None = None,
+    ) -> None:
+        config = _univnet_config(
+            sample_rate=sample_rate,
+            num_mels=num_mels,
+            hop_size=hop_size,
+            win_size=win_size,
+            waveform_upsample_rates=waveform_upsample_rates,
+            noise_channels=noise_channels,
+            output_channels=output_channels,
+            hidden_channels=hidden_channels,
+            lvc_layers_per_block=lvc_layers_per_block,
+            lvc_kernel_size=lvc_kernel_size,
+            kernel_predictor_hidden_channels=kernel_predictor_hidden_channels,
+            kernel_predictor_kernel_size=kernel_predictor_kernel_size,
+            kernel_predictor_dropout=kernel_predictor_dropout,
+            mel_upsample_factor=mel_upsample_factor,
         )
-        audio, ddsp_audio, harmonic, noise_audio = super().forward(
-            x=noise, c=batch.mel, f0=batch.f0
+        architecture = UnivNetArchitecture.from_config(config)
+        super().__init__()
+        self.backbone = DDSPUnivNetBackbone(
+            architecture,
+            sample_rate=sample_rate,
+            num_mels=num_mels,
+            hop_size=hop_size,
+            win_size=win_size,
+            type=type,
+            use_mean_filter=use_mean_filter,
+            n_mag_noise=n_mag_noise,
+            n_harmonics=n_harmonics,
+            n_mag_harmonic=n_mag_harmonic,
+            use_weight_norm=use_weight_norm,
+        )
+
+    def forward(self, batch: Batch) -> GeneratorOutput:
+        noise_input = _noise_input(batch, self.backbone.architecture)
+        audio, ddsp_audio, harmonic, noise = self.backbone(
+            noise_input,
+            batch.mel,
+            batch.f0,
         )
         return GeneratorOutput(
             audio,
-            {"ddsp_audio": ddsp_audio, "harmonic": harmonic, "noise": noise_audio},
+            {"ddsp_audio": ddsp_audio, "harmonic": harmonic, "noise": noise},
         )
 
 
-class NSFUnivNetGenerator(LegacyNSFUnivNet, GeneratorComponent):
+class NSFUnivNetGenerator(GeneratorComponent):
+    supported_objectives = frozenset({"nsf_univnet", "nsf_univnet_msd"})
+
     def __init__(
         self,
         sample_rate: int,
         num_mels: int,
         hop_size: int,
         win_size: int,
-        use_weight_norm: bool = True,
-        **model_args: Any,
+        use_weight_norm: bool,
+        waveform_upsample_rates: Sequence[int],
+        noise_channels: int,
+        output_channels: int,
+        hidden_channels: int,
+        lvc_layers_per_block: int,
+        lvc_kernel_size: int,
+        kernel_predictor_hidden_channels: int,
+        kernel_predictor_kernel_size: int,
+        kernel_predictor_dropout: float,
+        mel_upsample_factor: int,
     ) -> None:
-        config = _legacy_config(sample_rate, num_mels, hop_size, win_size, model_args)
-        super().__init__(config, use_weight_norm=use_weight_norm)
-        self.noise_channels = int(model_args["cond_in_channels"])
-        self.upmel = model_args.get("upmel")
+        config = _univnet_config(
+            sample_rate=sample_rate,
+            num_mels=num_mels,
+            hop_size=hop_size,
+            win_size=win_size,
+            waveform_upsample_rates=waveform_upsample_rates,
+            noise_channels=noise_channels,
+            output_channels=output_channels,
+            hidden_channels=hidden_channels,
+            lvc_layers_per_block=lvc_layers_per_block,
+            lvc_kernel_size=lvc_kernel_size,
+            kernel_predictor_hidden_channels=kernel_predictor_hidden_channels,
+            kernel_predictor_kernel_size=kernel_predictor_kernel_size,
+            kernel_predictor_dropout=kernel_predictor_dropout,
+            mel_upsample_factor=mel_upsample_factor,
+        )
+        super().__init__()
+        self.backbone = NSFUnivNetBackbone(config, use_weight_norm=use_weight_norm)
 
     def forward(self, batch: Batch) -> GeneratorOutput:
-        frames = batch.mel.shape[-1] * (self.upmel or 1)
-        noise = torch.randn(
-            batch.mel.shape[0],
-            self.noise_channels,
-            frames,
-            device=batch.mel.device,
-            dtype=batch.mel.dtype,
+        noise = _noise_input(batch, self.backbone.architecture)
+        audio, nsf_audio = self.backbone(
+            noise,
+            batch.mel,
+            batch.f0,
         )
-        audio, nsf_audio = super().forward(x=noise, c=batch.mel, f0=batch.f0)
         return GeneratorOutput(audio, {"nsf_audio": nsf_audio})
-
-
-class MultiScaleDiscriminator(LegacyMSD, DiscriminatorComponent):
-    def forward(self, audio: torch.Tensor) -> DiscriminatorOutput:
-        scores, feature_maps = super().forward(audio)
-        return DiscriminatorOutput(scores, feature_maps)
-
-
-class MultiPeriodDiscriminator(LegacyMPD, DiscriminatorComponent):
-    def forward(self, audio: torch.Tensor) -> DiscriminatorOutput:
-        scores, feature_maps = super().forward(audio)
-        return DiscriminatorOutput(scores, feature_maps)
-
-
-class MultiResolutionDiscriminator(LegacyMRD, DiscriminatorComponent):
-    def forward(self, audio: torch.Tensor) -> DiscriminatorOutput:
-        scores, feature_maps = super().forward(audio)
-        return DiscriminatorOutput(scores, feature_maps)
-
-
-class UnivMultiPeriodDiscriminator(LegacyUnivMPD, DiscriminatorComponent):
-    def forward(self, audio: torch.Tensor) -> DiscriminatorOutput:
-        scores, feature_maps = super().forward(audio)
-        return DiscriminatorOutput(scores, feature_maps)
-
-
-class FastMultiResolutionDiscriminator(LegacyFastMRD, DiscriminatorComponent):
-    def forward(self, audio: torch.Tensor) -> DiscriminatorOutput:
-        scores, feature_maps = super().forward(audio)
-        return DiscriminatorOutput(scores, feature_maps)
-
-
-class FastMultiPeriodDiscriminator(LegacyFastMPD, DiscriminatorComponent):
-    def forward(self, audio: torch.Tensor) -> DiscriminatorOutput:
-        scores, feature_maps = super().forward(audio)
-        return DiscriminatorOutput(scores, feature_maps)
 
 
 def create_builtin_registry() -> ComponentRegistry:

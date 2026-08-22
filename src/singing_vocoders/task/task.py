@@ -23,6 +23,12 @@ class VocoderTask(nn.Module):
         self.config = config
         component_registry = registry or create_builtin_registry()
         self.generator = component_registry.build(config.model.generator, GeneratorComponent)
+        supported_objectives = self.generator.supported_objectives
+        if supported_objectives is not None and config.objective.name not in supported_objectives:
+            supported = ", ".join(sorted(supported_objectives))
+            raise ValueError(
+                f"generator {config.model.generator.target} supports objectives: {supported}"
+            )
         self.discriminator = nn.ModuleDict(
             {
                 name: component_registry.build(spec, DiscriminatorComponent)

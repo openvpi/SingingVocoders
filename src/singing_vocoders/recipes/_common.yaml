@@ -31,7 +31,7 @@ runtime:
   devices: auto
   strategy: auto
   precision: 32-true
-  amp_initial_scale: 1
+  amp_initial_scale: 65536
   matmul_precision: high
   seed: 114514
   max_steps: 100000
@@ -40,7 +40,3 @@ runtime:
   checkpoint_every: 1000
   keep_last: 5
   output_dir: experiments
-export:
-  pc_aug: false
-  mini_nsf: false
-  noise_sigma: 0

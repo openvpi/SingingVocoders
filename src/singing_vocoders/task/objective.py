@@ -2,10 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import numpy as np
 import torch
 import torch.nn.functional as functional
-from librosa.filters import mel as librosa_mel
 from torch import Tensor, nn
 
 from singing_vocoders.components.contracts import (
@@ -23,52 +21,13 @@ from singing_vocoders.config.schema import (
     OneStepObjectiveConfig,
     UnivObjectiveConfig,
 )
+from singing_vocoders.modules.features import LogMelSpectrogram
 
 
 @dataclass(slots=True)
 class LossResult:
     loss: Tensor
     metrics: dict[str, Tensor]
-
-
-class LogMelSpectrogram(nn.Module):
-    mel_basis: Tensor
-    window: Tensor
-
-    def __init__(self, config: FeatureConfig) -> None:
-        super().__init__()
-        self.n_fft = config.n_fft
-        self.hop_size = config.hop_size
-        self.win_size = config.win_size
-        basis = librosa_mel(
-            sr=config.sample_rate,
-            n_fft=config.n_fft,
-            n_mels=config.num_mels,
-            fmin=config.fmin,
-            fmax=config.fmax,
-        ).astype(np.float32)
-        self.register_buffer("mel_basis", torch.from_numpy(basis), persistent=False)
-        self.register_buffer("window", torch.hann_window(config.win_size), persistent=False)
-
-    def forward(self, audio: Tensor) -> Tensor:
-        if audio.ndim == 3:
-            audio = audio.squeeze(1)
-        audio = audio.float()
-        left = (self.win_size - self.hop_size) // 2
-        right = (self.win_size - self.hop_size + 1) // 2
-        audio = functional.pad(audio.unsqueeze(1), (left, right), mode="reflect").squeeze(1)
-        magnitude = torch.stft(
-            audio,
-            self.n_fft,
-            hop_length=self.hop_size,
-            win_length=self.win_size,
-            window=self.window,
-            center=False,
-            normalized=False,
-            onesided=True,
-            return_complex=True,
-        ).abs()
-        return torch.matmul(self.mel_basis, magnitude).clamp_min_(1e-5).log_()
 
 
 class STFTLoss(nn.Module):
@@ -272,7 +231,11 @@ class VocoderObjective(nn.Module):
         loss = reference.new_zeros(())
         for real_branch, fake_branch in zip(real.feature_maps, fake.feature_maps, strict=True):
             for real_feature, fake_feature in zip(real_branch, fake_branch, strict=True):
-                batch = min(real_feature.shape[0], fake_feature.shape[0])
+                batch = real_feature.shape[0]
+                if fake_feature.shape[0] < batch:
+                    raise ValueError(
+                        "fake feature batch must not be smaller than the real feature batch"
+                    )
                 loss = loss + torch.mean(
                     torch.abs(real_feature[:batch].detach() - fake_feature[:batch])
                 )
@@ -356,7 +319,10 @@ class VocoderObjective(nn.Module):
             metrics.update(stft_metrics)
             mean = generated.aux["mean"]
             log_scale = generated.aux["log_scale"]
-            kl = 0.5 * (mean**2 + torch.exp(log_scale) - log_scale - 1).sum(dim=1).mean()
+            kl = (
+                0.5
+                * (mean.square() + torch.exp(2 * log_scale) - 2 * log_scale - 1).sum(dim=1).mean()
+            )
             waveform = functional.l1_loss(generated_audio, target_audio)
             total = total + kl * config.kl_weight + waveform * config.waveform_weight
             metrics["loss/aux/kl"] = kl.detach()
@@ -423,20 +389,12 @@ class VocoderObjective(nn.Module):
         logical_step: int = 0,
     ) -> LossResult:
         if not isinstance(self.config, OneStepObjectiveConfig):
-            discriminator = self.discriminator_loss(real, fake_detached)
-            generator = self.generator_loss(batch, generated, real, fake_connected, logical_step)
-            total = discriminator.loss + generator.loss
-            combined_metrics = {
-                **discriminator.metrics,
-                **generator.metrics,
-                "loss/joint": total.detach(),
-            }
-            return LossResult(total, combined_metrics)
+            raise TypeError("joint optimization requires the one_step objective")
 
         reference = generated.audio
         discriminator_loss = self._zero(reference)
-        generator_difference = self._zero(reference)
-        feature_difference = self._zero(reference)
+        generator_loss = self._zero(reference)
+        feature_loss = self._zero(reference)
         metrics: dict[str, Tensor] = {}
         for name in real:
             branch_discriminator = self._zero(reference)
@@ -450,21 +408,18 @@ class VocoderObjective(nn.Module):
                 branch_discriminator = branch_discriminator + torch.mean((1 - real_score) ** 2)
                 branch_discriminator = branch_discriminator + torch.mean(detached_score**2)
                 branch_generator = branch_generator + torch.mean((1 - connected_score) ** 2)
-                branch_generator = branch_generator - torch.mean((1 - detached_score) ** 2)
             connected_feature = self._feature_loss(real[name], fake_connected[name])
-            detached_feature = self._feature_loss(real[name], fake_detached[name])
-            branch_feature = connected_feature - detached_feature
             discriminator_loss = discriminator_loss + branch_discriminator
-            generator_difference = generator_difference + branch_generator
-            feature_difference = feature_difference + branch_feature
+            generator_loss = generator_loss + branch_generator
+            feature_loss = feature_loss + connected_feature
             metrics[f"loss/joint/{name}/discriminator"] = branch_discriminator.detach()
             metrics[f"loss/joint/{name}/generator"] = branch_generator.detach()
-            metrics[f"loss/joint/{name}/feature"] = branch_feature.detach()
+            metrics[f"loss/joint/{name}/feature"] = connected_feature.detach()
         auxiliary = self.auxiliary_loss(batch, generated, logical_step)
         total = (
             discriminator_loss * self.config.discriminator_weight
-            + generator_difference * self.config.adversarial_weight
-            + feature_difference * self.config.feature_weight
+            + generator_loss * self.config.adversarial_weight
+            + feature_loss * self.config.feature_weight
             + auxiliary.loss
         )
         metrics.update(auxiliary.metrics)

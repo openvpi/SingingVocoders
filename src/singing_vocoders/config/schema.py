@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -21,6 +22,8 @@ class ModelConfig(StrictModel):
 
     @model_validator(mode="after")
     def validate_discriminator_names(self) -> ModelConfig:
+        if not self.discriminators:
+            raise ValueError("at least one discriminator is required")
         if any(not name.strip() for name in self.discriminators):
             raise ValueError("discriminator names must not be empty")
         return self
@@ -46,6 +49,13 @@ class FeatureConfig(StrictModel):
             raise ValueError("f0_min must be smaller than f0_max")
         if self.win_size > self.n_fft:
             raise ValueError("win_size must not exceed n_fft")
+        if self.hop_size > self.win_size:
+            raise ValueError("hop_size must not exceed win_size")
+        nyquist = self.sample_rate / 2
+        if self.fmax > nyquist:
+            raise ValueError("fmax must not exceed the Nyquist frequency")
+        if self.f0_max > nyquist:
+            raise ValueError("f0_max must not exceed the Nyquist frequency")
         return self
 
 
@@ -186,6 +196,12 @@ class AdamWConfig(StrictModel):
     eps: float = Field(default=1e-8, gt=0)
     weight_decay: float = Field(default=0.0, ge=0)
 
+    @model_validator(mode="after")
+    def validate_betas(self) -> AdamWConfig:
+        if any(beta < 0 or beta >= 1 for beta in self.betas):
+            raise ValueError("AdamW betas must be in the range [0, 1)")
+        return self
+
 
 class MuonAdamWConfig(StrictModel):
     name: Literal["muon_adamw"] = "muon_adamw"
@@ -198,6 +214,12 @@ class MuonAdamWConfig(StrictModel):
     adamw_betas: tuple[float, float] = (0.9, 0.95)
     adamw_eps: float = Field(default=1e-8, gt=0)
     adamw_weight_decay: float = Field(default=0.0, ge=0)
+
+    @model_validator(mode="after")
+    def validate_adamw_betas(self) -> MuonAdamWConfig:
+        if any(beta < 0 or beta >= 1 for beta in self.adamw_betas):
+            raise ValueError("Muon AdamW betas must be in the range [0, 1)")
+        return self
 
 
 OptimizerConfig = Annotated[AdamWConfig | MuonAdamWConfig, Field(discriminator="name")]
@@ -231,6 +253,15 @@ class WarmupAlternatingPlanConfig(StrictModel):
     generator: OptimizerSlotConfig
     discriminator: OptimizerSlotConfig
 
+    @model_validator(mode="after")
+    def validate_warmup_boundary(self) -> WarmupAlternatingPlanConfig:
+        generator_micro_steps = (
+            self.aux_steps + self.generator.frequency - 1
+        ) // self.generator.frequency
+        if generator_micro_steps % self.generator.accumulate != 0:
+            raise ValueError("auxiliary warmup must end at a generator accumulation boundary")
+        return self
+
 
 class JointPlanConfig(StrictModel):
     name: Literal["joint"]
@@ -245,10 +276,10 @@ OptimizationConfig = Annotated[
 
 class RuntimeConfig(StrictModel):
     accelerator: Literal["auto", "cpu", "cuda"] = "auto"
-    devices: int | Literal["auto"] = "auto"
+    devices: PositiveInt | Literal["auto"] = "auto"
     strategy: Literal["auto", "ddp"] = "auto"
     precision: Literal["32-true", "16-mixed", "bf16-mixed"] = "32-true"
-    amp_initial_scale: float = Field(default=1.0, gt=0)
+    amp_initial_scale: float = Field(default=65_536.0, gt=0)
     matmul_precision: Literal["highest", "high", "medium"] = "high"
     seed: int = 114_514
     max_steps: PositiveInt = 100_000
@@ -257,12 +288,6 @@ class RuntimeConfig(StrictModel):
     checkpoint_every: PositiveInt = 1_000
     keep_last: PositiveInt = 5
     output_dir: Path = Path("experiments")
-
-
-class ExportConfig(StrictModel):
-    pc_aug: bool = False
-    mini_nsf: bool = False
-    noise_sigma: float = Field(default=0.0, ge=0)
 
 
 class RecipeConfig(StrictModel):
@@ -274,4 +299,43 @@ class RecipeConfig(StrictModel):
     objective: ObjectiveConfig
     optimization: OptimizationConfig
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
-    export: ExportConfig = Field(default_factory=ExportConfig)
+
+    @model_validator(mode="after")
+    def validate_objective_and_optimization(self) -> RecipeConfig:
+        uses_joint = isinstance(self.optimization, JointPlanConfig)
+        uses_one_step = isinstance(self.objective, OneStepObjectiveConfig)
+        if uses_joint != uses_one_step:
+            raise ValueError("joint optimization and one_step objective must be used together")
+        params = self.model.generator.params
+        target = self.model.generator.target
+        expected_keys: dict[str, int] = {}
+        if target == "nsf_hifigan":
+            expected_keys = {
+                "sampling_rate": self.data.features.sample_rate,
+                "num_mels": self.data.features.num_mels,
+                "hop_size": self.data.features.hop_size,
+            }
+        elif target == "hifivae":
+            expected_keys = {"hop_size": self.data.features.hop_size}
+            rates = params.get("upsample_rates")
+            if (
+                not isinstance(rates, list)
+                or not rates
+                or any(
+                    not isinstance(rate, int) or isinstance(rate, bool) or rate < 1
+                    for rate in rates
+                )
+                or math.prod(rates) != self.data.features.hop_size
+            ):
+                raise ValueError("HiFiVAE upsample rates must multiply to data.features.hop_size")
+        elif target in {"univnet", "nsf_univnet", "ddsp_univnet", "ddspgan", "lvc_ddspgan"}:
+            expected_keys = {
+                "sample_rate": self.data.features.sample_rate,
+                "num_mels": self.data.features.num_mels,
+                "hop_size": self.data.features.hop_size,
+                "win_size": self.data.features.win_size,
+            }
+        for key, expected in expected_keys.items():
+            if params.get(key) != expected:
+                raise ValueError(f"generator parameter {key} must match data.features")
+        return self

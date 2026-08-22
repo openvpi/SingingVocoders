@@ -12,16 +12,16 @@ model:
     mrd:
       target: fast_mrd
       params:
-        init_channel: 8
+        initial_channels: 8
         strides: [4, 2, 2]
         fft_sizes: [512, 1024, 2048]
         hop_sizes: [64, 128, 256]
-        win_lengths: [512, 1024, 2048]
+        window_lengths: [512, 1024, 2048]
     mpd:
       target: fast_mpd
       params:
         periods: [2, 3, 5, 7, 11]
-        init_channel: 8
+        initial_channels: 8
         strides: [4, 4, 4]
         kernel_size: 11
 objective:
@@ -55,6 +55,3 @@ runtime:
   max_steps: 1000000
   validate_every: 2000
   checkpoint_every: 2000
-export:
-  mini_nsf: true
-  noise_sigma: 0.01

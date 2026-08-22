@@ -9,9 +9,8 @@ model:
   generator:
     target: hifivae
     params:
-      sampling_rate: 44100
-      num_mels: 192
-      hop_size: 512
+      latent_channels: 192
+      hop_size: ${data.features.hop_size}
       upsample_rates: [8, 8, 2, 2, 2]
       upsample_kernel_sizes: [16, 16, 4, 4, 4]
       upsample_initial_channel: 512

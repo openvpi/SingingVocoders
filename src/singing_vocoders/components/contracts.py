@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, ClassVar
 
 import torch
 from torch import Tensor, nn
@@ -40,6 +40,8 @@ class DiscriminatorOutput:
 
 
 class GeneratorComponent(nn.Module):
+    supported_objectives: ClassVar[frozenset[str] | None] = None
+
     def forward(self, batch: Batch) -> GeneratorOutput:
         raise NotImplementedError
 

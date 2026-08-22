@@ -24,6 +24,3 @@ optimization:
 runtime:
   validate_every: 2000
   checkpoint_every: 2000
-export:
-  pc_aug: true
-  mini_nsf: true

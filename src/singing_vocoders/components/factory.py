@@ -47,6 +47,8 @@ class ComponentRegistry:
             raise TypeError(
                 f"{spec.target} must implement {expected.__module__}.{expected.__qualname__}"
             )
+        if component_type.forward is expected.forward:
+            raise TypeError(f"component {spec.target} does not implement forward")
         try:
             inspect.signature(component_type).bind(**spec.params)
         except TypeError as error:

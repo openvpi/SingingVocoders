@@ -4,11 +4,12 @@ model:
   generator:
     target: ddspgan
     params:
-      sample_rate: 44100
-      num_mels: 128
-      hop_size: 512
-      win_size: 2048
+      sample_rate: ${data.features.sample_rate}
+      num_mels: ${data.features.num_mels}
+      hop_size: ${data.features.hop_size}
+      win_size: ${data.features.win_size}
       type: CombSub
+      use_mean_filter: true
       n_mag_harmonic: 512
       n_mag_noise: 256
   discriminators:

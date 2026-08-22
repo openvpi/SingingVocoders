@@ -1,68 +1,57 @@
-# import gin
+# Adapted from yxlllc/pc-ddsp under the MIT License.
 
-import numpy as np
+from __future__ import annotations
+
+from collections.abc import Mapping
+
 import torch
-import torch.nn as nn
+from torch import Tensor, nn
 from torch.nn.utils import weight_norm
 
-from .pcmer import PCmer
+from singing_vocoders.modules.ddsp.model_conformer_naive import ConformerNaiveEncoder
 
 
-def split_to_dict(tensor, tensor_splits):
-    """Split a tensor into a dictionary of multiple tensors."""
-    labels = []
-    sizes = []
-
-    for k, v in tensor_splits.items():
-        labels.append(k)
-        sizes.append(v)
-
+def split_to_dict(tensor: Tensor, tensor_splits: Mapping[str, int]) -> dict[str, Tensor]:
+    labels = tuple(tensor_splits)
+    sizes = list(tensor_splits.values())
     tensors = torch.split(tensor, sizes, dim=-1)
-    return dict(zip(labels, tensors))
+    return dict(zip(labels, tensors, strict=True))
 
 
 class Mel2Control(nn.Module):
-    def __init__(self, input_channel, output_splits):
+    def __init__(
+        self,
+        n_mels: int,
+        block_size: int,
+        output_splits: Mapping[str, int],
+    ) -> None:
         super().__init__()
-        self.output_splits = output_splits
-        self.phase_embed = nn.Linear(1, 256)
-        # conv in stack
+        if not output_splits or any(size < 1 for size in output_splits.values()):
+            raise ValueError("output_splits must contain positive sizes")
+        self.output_splits = dict(output_splits)
+        self.mel_emb = nn.Linear(n_mels, 256)
         self.stack = nn.Sequential(
-            nn.Conv1d(input_channel, 256, 3, 1, 1),
-            nn.GroupNorm(4, 256),
-            nn.LeakyReLU(),
-            nn.Conv1d(256, 256, 3, 1, 1),
+            weight_norm(nn.Conv1d(2 * block_size, 512, 3, 1, 1)),
+            nn.PReLU(num_parameters=512),
+            weight_norm(nn.Conv1d(512, 256, 3, 1, 1)),
         )
-
-        # transformer
-        self.decoder = PCmer(
+        self.decoder = ConformerNaiveEncoder(
             num_layers=3,
             num_heads=8,
             dim_model=256,
-            dim_keys=256,
-            dim_values=256,
-            residual_dropout=0.1,
-            attention_dropout=0.1,
+            use_norm=False,
+            conv_only=True,
+            conv_dropout=0,
+            atten_dropout=0.1,
         )
         self.norm = nn.LayerNorm(256)
-
-        # out
-        self.n_out = sum([v for k, v in output_splits.items()])
+        self.n_out = sum(output_splits.values())
         self.dense_out = weight_norm(nn.Linear(256, self.n_out))
 
-    def forward(self, mel, phase):
-        """
-        input:
-            B x n_frames x n_mels
-        return:
-            dict of B x n_frames x feat
-        """
-
-        x = self.stack(mel.transpose(1, 2)).transpose(1, 2)
-        x = x + self.phase_embed(phase / np.pi)
-        x = self.decoder(x)
-        x = self.norm(x)
-        e = self.dense_out(x)
-        controls = split_to_dict(e, self.output_splits)
-
-        return controls
+    def forward(self, mel: Tensor, source: Tensor, noise: Tensor) -> dict[str, Tensor]:
+        if source.shape != noise.shape:
+            raise ValueError("source and noise frames must have the same shape")
+        exciter = torch.cat((source, noise), dim=-1).transpose(1, 2)
+        hidden = self.mel_emb(mel) + self.stack(exciter).transpose(1, 2)
+        hidden = self.norm(self.decoder(hidden))
+        return split_to_dict(self.dense_out(hidden), self.output_splits)

@@ -4,14 +4,14 @@ model:
   generator:
     target: lvc_ddspgan
     params:
-      lvc_noise_channels: 8
-      lvc_latent_channels: 8
-      lvc_block_nums: 3
-      lvc_layers_each_block: 10
-      lvc_kernel_size: 7
-      kpnet_hidden_channels: 128
-      kpnet_conv_size: 3
-      dropout: 0
-      up_condition: 2
+      noise_channels: 8
+      hidden_channels: 8
+      block_count: 3
+      layers_per_block: 10
+      convolution_kernel_size: 7
+      kernel_predictor_hidden_channels: 128
+      kernel_predictor_kernel_size: 3
+      kernel_predictor_dropout: 0
+      conditioning_upsample_factor: 2
 runtime:
   max_steps: 800000

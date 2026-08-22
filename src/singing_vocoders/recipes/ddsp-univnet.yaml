@@ -5,6 +5,7 @@ model:
     target: ddsp_univnet
     params:
       type: CombSub
+      use_mean_filter: true
       n_mag_harmonic: 512
       n_mag_noise: 256
   discriminators:
@@ -13,7 +14,7 @@ model:
       params:
         fft_sizes: [1024, 2048, 512]
         hop_sizes: [120, 240, 50]
-        win_lengths: [600, 1200, 240]
+        window_lengths: [600, 1200, 240]
     mpd:
       target: univ_mpd
       params:

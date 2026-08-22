@@ -2,9 +2,9 @@ model:
   generator:
     target: nsf_hifigan
     params:
-      sampling_rate: 44100
-      num_mels: 128
-      hop_size: 512
+      sampling_rate: ${data.features.sample_rate}
+      num_mels: ${data.features.num_mels}
+      hop_size: ${data.features.hop_size}
       mini_nsf: false
       noise_sigma: 0
       upsample_rates: [8, 8, 2, 2, 2]
