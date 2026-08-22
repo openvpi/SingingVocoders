@@ -1,0 +1,17 @@
+bases: [ddspgan.yaml]
+name: lvc-ddspgan
+model:
+  generator:
+    target: lvc_ddspgan
+    params:
+      lvc_noise_channels: 8
+      lvc_latent_channels: 8
+      lvc_block_nums: 3
+      lvc_layers_each_block: 10
+      lvc_kernel_size: 7
+      kpnet_hidden_channels: 128
+      kpnet_conv_size: 3
+      dropout: 0
+      up_condition: 2
+runtime:
+  max_steps: 800000

@@ -1,0 +1,14 @@
+bases: [univnet.yaml]
+name: ddsp-univnet
+model:
+  generator:
+    target: ddsp_univnet
+    params:
+      type: CombSub
+      n_mag_harmonic: 512
+      n_mag_noise: 256
+objective:
+  name: ddsp_univnet
+  aux_weight: 2.5
+  feature_weight: 1
+  adversarial_weight: 1

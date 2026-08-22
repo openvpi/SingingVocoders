@@ -1,0 +1,29 @@
+bases: [nsf-hifigan.yaml]
+name: pc-nsf-hifigan
+data:
+  crop_frames: 32
+  batch_size: 3
+augmentation:
+  pc_enabled: true
+  pc_probability: 0.4
+  pc_key_range: 12
+model:
+  generator:
+    params:
+      mini_nsf: true
+      noise_sigma: 0
+optimization:
+  generator:
+    optimizer:
+      lr: 0.00001
+    clip_grad_norm: 1
+  discriminator:
+    optimizer:
+      lr: 0.00001
+    clip_grad_norm: 1
+runtime:
+  validate_every: 2000
+  checkpoint_every: 2000
+export:
+  pc_aug: true
+  mini_nsf: true

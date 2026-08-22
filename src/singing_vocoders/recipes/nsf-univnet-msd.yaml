@@ -1,0 +1,9 @@
+bases: [nsf-univnet.yaml]
+name: nsf-univnet-msd
+model:
+  discriminators:
+    mrd:
+      target: msd
+      params: {}
+objective:
+  name: nsf_univnet_msd

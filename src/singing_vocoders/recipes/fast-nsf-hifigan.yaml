@@ -1,0 +1,55 @@
+bases: [_common.yaml, _nsf.yaml]
+name: fast-nsf-hifigan
+data:
+  crop_frames: 48
+  batch_size: 40
+model:
+  generator:
+    params:
+      mini_nsf: true
+      noise_sigma: 0.01
+  discriminators:
+    mrd:
+      target: fast_mrd
+      params:
+        init_channel: 8
+        strides: [4, 2, 2]
+        fft_sizes: [512, 1024, 2048]
+        hop_sizes: [64, 128, 256]
+        win_lengths: [512, 1024, 2048]
+    mpd:
+      target: fast_mpd
+      params:
+        periods: [2, 3, 5, 7, 11]
+        init_channel: 8
+        strides: [4, 4, 4]
+        kernel_size: 11
+objective:
+  name: univnet
+  aux_weight: 45
+  feature_weight: 1
+  adversarial_weight: 1
+optimization:
+  name: alternating
+  generator:
+    optimizer:
+      name: muon_adamw
+      lr: 0.0002
+      adamw_lr: 0.0002
+      weight_decay: 0.01
+    clip_grad_norm: 1
+  discriminator:
+    optimizer:
+      name: muon_adamw
+      lr: 0.0002
+      adamw_lr: 0.0002
+      weight_decay: 0.1
+    clip_grad_norm: 1
+runtime:
+  precision: 16-mixed
+  max_steps: 1000000
+  validate_every: 2000
+  checkpoint_every: 2000
+export:
+  mini_nsf: true
+  noise_sigma: 0.01

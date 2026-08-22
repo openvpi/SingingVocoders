@@ -1,0 +1,15 @@
+bases: [_common.yaml, _nsf.yaml, _alternating-1e4.yaml]
+name: nsf-hifigan
+model:
+  discriminators:
+    msd:
+      target: msd
+    mpd:
+      target: mpd
+      params:
+        periods: [3, 5, 7, 11, 17, 23, 37]
+objective:
+  name: hifigan
+  mel_weight: 45
+  feature_weight: 1
+  adversarial_weight: 1

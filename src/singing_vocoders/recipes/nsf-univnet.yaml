@@ -1,0 +1,10 @@
+bases: [univnet.yaml]
+name: nsf-univnet
+model:
+  generator:
+    target: nsf_univnet
+objective:
+  name: nsf_univnet
+  aux_weight: 2.5
+  feature_weight: 1
+  adversarial_weight: 1

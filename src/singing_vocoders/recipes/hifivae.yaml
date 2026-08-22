@@ -1,0 +1,45 @@
+bases: [_common.yaml, _warmup-1e4.yaml]
+name: hifivae
+data:
+  features:
+    num_mels: 192
+  crop_frames: 22
+  batch_size: 6
+augmentation:
+  volume_probability: 0.7
+model:
+  generator:
+    target: hifivae
+    params:
+      sampling_rate: 44100
+      num_mels: 192
+      hop_size: 512
+      upsample_rates: [8, 8, 2, 2, 2]
+      upsample_kernel_sizes: [16, 16, 4, 4, 4]
+      upsample_initial_channel: 512
+      resblock_kernel_sizes: [3, 7, 11]
+      resblock_dilation_sizes:
+        - [1, 3, 5]
+        - [1, 3, 5]
+        - [1, 3, 5]
+      resblock: "1"
+  discriminators:
+    msd:
+      target: msd
+    mpd:
+      target: mpd
+      params:
+        periods: [3, 5, 7, 11, 17, 23, 37]
+objective:
+  name: hifivae
+  mel_weight: 2.5
+  kl_weight: 0.02
+  feature_weight: 1
+  adversarial_weight: 1
+optimization:
+  aux_steps: 16000
+runtime:
+  seed: 1234
+  max_steps: 5000000
+  validate_every: 4000
+  checkpoint_every: 4000

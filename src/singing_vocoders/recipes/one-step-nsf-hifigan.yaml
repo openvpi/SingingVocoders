@@ -1,0 +1,21 @@
+bases: [_common.yaml, _nsf.yaml]
+name: one-step-nsf-hifigan
+model:
+  discriminators:
+    msd:
+      target: msd
+    mpd:
+      target: mpd
+      params:
+        periods: [3, 5, 7, 11, 17, 23, 37]
+objective:
+  name: one_step
+  mel_weight: 45
+  adversarial_weight: 1
+optimization:
+  name: joint
+  joint:
+    optimizer:
+      name: adamw
+      lr: 0.0001
+      betas: [0.5, 0.99]

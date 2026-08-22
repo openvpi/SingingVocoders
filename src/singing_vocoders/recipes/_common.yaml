@@ -1,0 +1,44 @@
+schema_version: 1
+data:
+  processed_dir: data/junninghua-44k-128
+  features:
+    sample_rate: 44100
+    num_mels: 128
+    hop_size: 512
+    n_fft: 2048
+    win_size: 2048
+    fmin: 40
+    fmax: 16000
+    f0_min: 65
+    f0_max: 1100
+    pitch_extractor: parselmouth
+  validation_size: 10
+  seed: 114514
+  crop_frames: 20
+  batch_size: 3
+  num_workers: 4
+  prefetch_factor: 2
+  pin_memory: true
+  persistent_workers: true
+augmentation:
+  volume_enabled: true
+  volume_probability: 0.5
+  pc_enabled: false
+  pc_probability: 0.4
+  pc_key_range: 12
+runtime:
+  accelerator: auto
+  devices: auto
+  strategy: auto
+  precision: 32-true
+  seed: 114514
+  max_steps: 100000
+  validate_every: 1000
+  log_every: 100
+  checkpoint_every: 1000
+  keep_last: 5
+  output_dir: experiments
+export:
+  pc_aug: false
+  mini_nsf: false
+  noise_sigma: 0

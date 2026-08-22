@@ -1,0 +1,25 @@
+bases: [_common.yaml, _alternating-1e4.yaml]
+name: ddspgan
+model:
+  generator:
+    target: ddspgan
+    params:
+      sample_rate: 44100
+      num_mels: 128
+      hop_size: 512
+      win_size: 2048
+      type: CombSub
+      n_mag_harmonic: 512
+      n_mag_noise: 256
+  discriminators:
+    msd:
+      target: msd
+    mpd:
+      target: mpd
+      params:
+        periods: [3, 5, 7, 11, 17, 23, 37]
+objective:
+  name: ddsp
+  aux_weight: 45
+  feature_weight: 1
+  adversarial_weight: 1
