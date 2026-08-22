@@ -223,13 +223,6 @@ class FabricGanEngine:
             item = batch.metadata[0].get("item", "unknown") if batch.metadata else "unknown"
             raise FloatingPointError(f"non-finite {phase} loss at item {item}")
 
-    @staticmethod
-    def _ensure_finite_gradients(optimizer: Optimizer, phase: str) -> None:
-        for group in optimizer.param_groups:
-            for parameter in group["params"]:
-                if parameter.grad is not None and not torch.isfinite(parameter.grad).all():
-                    raise FloatingPointError(f"non-finite gradient in {phase}")
-
     def _backward_and_maybe_step(
         self, slot: OptimizerRuntime, loss: Tensor, phase: str, batch: Batch
     ) -> bool:
@@ -245,15 +238,22 @@ class FabricGanEngine:
         if not should_step:
             return False
         slot.state.attempted_updates += 1
-        if slot.config.clip_grad_norm is not None:
+        try:
             self.fabric.clip_gradients(
                 slot.module,
                 slot.optimizer,
-                max_norm=slot.config.clip_grad_norm,
+                max_norm=(
+                    slot.config.clip_grad_norm
+                    if slot.config.clip_grad_norm is not None
+                    else float("inf")
+                ),
                 error_if_nonfinite=True,
             )
-        else:
-            self._ensure_finite_gradients(slot.optimizer, phase)
+        except RuntimeError as error:
+            if "non-finite" not in str(error):
+                raise
+            item = batch.metadata[0].get("item", "unknown") if batch.metadata else "unknown"
+            raise FloatingPointError(f"non-finite gradient in {phase} at item {item}") from error
         scale_before = self._scaler_scale()
         slot.optimizer.step()
         scale_after = self._scaler_scale()

@@ -57,4 +57,6 @@ def test_all_builtin_recipes_validate() -> None:
     recipe_dir = Path(__file__).parents[1] / "src" / "singing_vocoders" / "recipes"
     recipes = sorted(path for path in recipe_dir.glob("*.yaml") if not path.name.startswith("_"))
     assert len(recipes) == 11
-    assert {load_config(path).config.name for path in recipes} == {path.stem for path in recipes}
+    loaded = [load_config(path).config for path in recipes]
+    assert {config.name for config in loaded} == {path.stem for path in recipes}
+    assert {config.data.features.num_mels for config in loaded} == {128}

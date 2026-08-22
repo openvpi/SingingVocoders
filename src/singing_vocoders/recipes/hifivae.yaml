@@ -1,8 +1,6 @@
 bases: [_common.yaml, _warmup-1e4.yaml]
 name: hifivae
 data:
-  features:
-    num_mels: 192
   crop_frames: 22
   batch_size: 6
 augmentation:

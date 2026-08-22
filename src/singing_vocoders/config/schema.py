@@ -248,6 +248,7 @@ class RuntimeConfig(StrictModel):
     devices: int | Literal["auto"] = "auto"
     strategy: Literal["auto", "ddp"] = "auto"
     precision: Literal["32-true", "16-mixed", "bf16-mixed"] = "32-true"
+    amp_initial_scale: float = Field(default=1.0, gt=0)
     matmul_precision: Literal["highest", "high", "medium"] = "high"
     seed: int = 114_514
     max_steps: PositiveInt = 100_000

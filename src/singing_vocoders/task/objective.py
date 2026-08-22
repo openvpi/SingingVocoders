@@ -302,9 +302,7 @@ class VocoderObjective(nn.Module):
             harmonic = harmonic.squeeze(1)
         target = batch.audio.squeeze(1)
         rss = self.rss(signal, target)
-        uv_mask = self._upsample_frames(
-            batch.uv.float().unsqueeze(-1), self.hop_size
-        ).squeeze(-1)
+        uv_mask = self._upsample_frames(batch.uv.float().unsqueeze(-1), self.hop_size).squeeze(-1)
         length = min(signal.shape[-1], harmonic.shape[-1], uv_mask.shape[-1])
         uv = torch.mean(
             torch.linalg.vector_norm(harmonic[..., :length] * uv_mask[..., :length], dim=1)

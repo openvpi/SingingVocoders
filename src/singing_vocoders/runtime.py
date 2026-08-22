@@ -9,6 +9,7 @@ from typing import Any, Literal, cast
 import torch
 from lightning_fabric import Fabric
 from lightning_fabric.loggers.tensorboard import TensorBoardLogger
+from lightning_fabric.plugins.precision import MixedPrecision
 from omegaconf import OmegaConf
 
 from singing_vocoders.checkpoint import (
@@ -41,11 +42,34 @@ def choose_run_dir(config: RecipeConfig, requested: str | Path | None = None) ->
 
 
 def create_fabric(config: RecipeConfig, run_dir: Path | None = None) -> Fabric:
+    torch.set_float32_matmul_precision(config.runtime.matmul_precision)
     logger = (
         TensorBoardLogger(root_dir=run_dir, name="logs", version="", default_hp_metric=False)
         if run_dir is not None
         else None
     )
+    if config.runtime.precision == "16-mixed":
+        device_type = (
+            "cuda"
+            if config.runtime.accelerator == "cuda"
+            or (config.runtime.accelerator == "auto" and torch.cuda.is_available())
+            else "cpu"
+        )
+        precision_plugin = MixedPrecision(
+            "16-mixed",
+            device_type,
+            scaler=torch.GradScaler(
+                device_type,
+                init_scale=config.runtime.amp_initial_scale,
+            ),
+        )
+        return Fabric(
+            accelerator=config.runtime.accelerator,
+            devices=config.runtime.devices,
+            strategy=config.runtime.strategy,
+            plugins=precision_plugin,
+            loggers=logger,
+        )
     return Fabric(
         accelerator=config.runtime.accelerator,
         devices=config.runtime.devices,
@@ -136,7 +160,6 @@ def train_worker(
     warm_start_scope: Literal["generator", "all"],
 ) -> str | None:
     config = loaded.config
-    torch.set_float32_matmul_precision(config.runtime.matmul_precision)
     fabric.seed_everything(config.runtime.seed, workers=True)
     if fabric.global_rank == 0:
         run_dir.mkdir(parents=True, exist_ok=False)
@@ -209,7 +232,6 @@ def validate_worker(
     max_batches: int | None,
 ) -> dict[str, float] | None:
     config = loaded.config
-    torch.set_float32_matmul_precision(config.runtime.matmul_precision)
     fabric.seed_everything(config.runtime.seed, workers=True)
     train_loader, valid_loader, loaders = _setup_loaders(fabric, config)
     engine = FabricGanEngine(fabric, VocoderTask(config))
