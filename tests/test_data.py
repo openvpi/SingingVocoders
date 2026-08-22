@@ -7,6 +7,7 @@ import soundfile
 from singing_vocoders.config.schema import AugmentationConfig, FeatureConfig
 from singing_vocoders.data.dataset import VocoderDataset, collate_batches
 from singing_vocoders.data.preprocess import preprocess_dataset
+from singing_vocoders.data.runtime import EpochShuffleSampler
 
 
 def _write_dataset(root: Path, frames: int) -> None:
@@ -70,6 +71,18 @@ def test_corrupt_alignment_is_rejected_without_sample_replacement(tmp_path: Path
     dataset = VocoderDataset(tmp_path, "train", crop_frames=8, hop_size=4, seed=1)
     with pytest.raises(ValueError, match="unaligned arrays"):
         dataset[0]
+
+
+def test_epoch_sampler_is_deterministic_and_stateful() -> None:
+    sampler = EpochShuffleSampler(20, seed=114514)
+    first = list(sampler)
+    assert first == list(EpochShuffleSampler(20, seed=114514))
+    sampler.set_epoch(1)
+    second = list(sampler)
+    assert second != first
+    restored = EpochShuffleSampler(20, seed=114514)
+    restored.load_state_dict(sampler.state_dict())
+    assert list(restored) == second
 
 
 def test_preprocessing_is_reproducible_across_pcm_widths_and_sample_rates(

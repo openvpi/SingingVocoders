@@ -5,13 +5,14 @@ import parselmouth
 import torch
 import torch.nn.functional as torch_functional
 from librosa.filters import mel as librosa_mel
+from numpy.typing import NDArray
 
 from singing_vocoders.config.schema import FeatureConfig
 
 PITCH_EXTRACTOR_IDS = {"parselmouth": 0, "harvest": 1}
 
 
-def mel_spectrogram(audio: np.ndarray, config: FeatureConfig) -> np.ndarray:
+def mel_spectrogram(audio: NDArray[np.float32], config: FeatureConfig) -> NDArray[np.float32]:
     waveform = torch.from_numpy(audio).float().unsqueeze(0)
     left = (config.win_size - config.hop_size) // 2
     right = (config.win_size - config.hop_size + 1) // 2
@@ -41,7 +42,9 @@ def mel_spectrogram(audio: np.ndarray, config: FeatureConfig) -> np.ndarray:
     return mel.squeeze(0).transpose(0, 1).numpy().astype(np.float32, copy=False)
 
 
-def _interpolate_f0(f0: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def _interpolate_f0(
+    f0: NDArray[np.float32],
+) -> tuple[NDArray[np.float32], NDArray[np.bool_]]:
     uv = f0 <= 0
     if uv.all():
         raise ValueError("pitch extractor found no voiced frames")
@@ -51,7 +54,9 @@ def _interpolate_f0(f0: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return f0.astype(np.float32, copy=False), uv.astype(np.bool_, copy=False)
 
 
-def _parselmouth_pitch(audio: np.ndarray, frames: int, config: FeatureConfig) -> np.ndarray:
+def _parselmouth_pitch(
+    audio: NDArray[np.float32], frames: int, config: FeatureConfig
+) -> NDArray[np.float32]:
     hop = config.hop_size
     left = int(np.ceil(1.5 / config.f0_min * config.sample_rate))
     right = hop * ((len(audio) - 1) // hop + 1) - len(audio) + left + 1
@@ -66,7 +71,9 @@ def _parselmouth_pitch(audio: np.ndarray, frames: int, config: FeatureConfig) ->
     return np.pad(f0, (0, max(0, frames - len(f0))))[:frames]
 
 
-def _harvest_pitch(audio: np.ndarray, frames: int, config: FeatureConfig) -> np.ndarray:
+def _harvest_pitch(
+    audio: NDArray[np.float32], frames: int, config: FeatureConfig
+) -> NDArray[np.float32]:
     import pyworld
 
     f0, time_axis = pyworld.harvest(
@@ -81,8 +88,8 @@ def _harvest_pitch(audio: np.ndarray, frames: int, config: FeatureConfig) -> np.
 
 
 def extract_pitch(
-    audio: np.ndarray, frames: int, config: FeatureConfig
-) -> tuple[np.ndarray, np.ndarray, int]:
+    audio: NDArray[np.float32], frames: int, config: FeatureConfig
+) -> tuple[NDArray[np.float32], NDArray[np.bool_], int]:
     if config.pitch_extractor == "parselmouth":
         f0 = _parselmouth_pitch(audio, frames, config)
     elif config.pitch_extractor == "harvest":

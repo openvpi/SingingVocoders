@@ -374,6 +374,23 @@ class FabricGanEngine:
         result = cast(Tensor, self.fabric.all_reduce(total / count, reduce_op="mean"))
         return {"validation/loss": result}
 
+    @torch.no_grad()
+    def predict(self, batch: Batch) -> GeneratorOutput:
+        was_training = self.raw_task.training
+        self.raw_task.eval()
+        if self.generator is not None:
+            self.generator.eval()
+        if self.joint_module is not None:
+            self.joint_module.eval()
+        output = self._generate(batch.to(self.fabric.device, non_blocking=True))
+        if was_training:
+            self.raw_task.train()
+            if self.generator is not None:
+                self.generator.train()
+            if self.joint_module is not None:
+                self.joint_module.train()
+        return output
+
     def fit(
         self,
         loader: Any,

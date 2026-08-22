@@ -27,6 +27,8 @@ def export_diffsinger(
         for name, tensor in state.items()
         if name.startswith("generator.")
     }
+    if not generator and not any(name.startswith("discriminator.") for name in state):
+        generator = state
     if not generator:
         raise ValueError("checkpoint contains no generator weights")
     if resolved_config is None:
@@ -50,10 +52,12 @@ def export_diffsinger(
         "noise_sigma": export_config.get("noise_sigma", generator_params.get("noise_sigma", 0.0)),
     }
     destination.parent.mkdir(parents=True, exist_ok=True)
+    config_path = destination.with_name("config.json")
+    if config_path.exists():
+        raise FileExistsError(config_path)
     temporary = destination.with_suffix(destination.suffix + ".tmp")
     torch.save({"generator": generator}, temporary)
     os.replace(temporary, destination)
-    config_path = destination.with_name("config.json")
     config_temporary = config_path.with_suffix(".json.tmp")
     config_temporary.write_text(
         json.dumps(model_args, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n"

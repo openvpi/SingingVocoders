@@ -247,3 +247,17 @@ def test_checkpoint_inspection_and_diffsinger_export(tmp_path: Path) -> None:
     assert exported_config["sampling_rate"] == 8_000
     assert exported_config["num_mels"] == 4
     assert exported_config["pc_aug"] is False
+
+
+def test_diffsinger_export_accepts_raw_generator_state(tmp_path: Path) -> None:
+    config = _config()
+    engine = _engine(config)
+    source = tmp_path / "raw.pt"
+    torch.save(engine.raw_task.generator.state_dict(), source)
+    output, _ = export_diffsinger(
+        source,
+        tmp_path / "raw-export" / "model.pt",
+        resolved_config=config.model_dump(mode="json"),
+    )
+    exported = torch.load(output, map_location="cpu", weights_only=True)["generator"]
+    engine.raw_task.generator.load_state_dict(exported, strict=True)

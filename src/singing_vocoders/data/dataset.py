@@ -3,10 +3,11 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import numpy as np
 import torch
+from numpy.typing import NDArray
 from torch.utils.data import Dataset
 
 from singing_vocoders.components.contracts import Batch
@@ -30,7 +31,8 @@ class VocoderDataset(Dataset[Batch]):
         self.hop_size = hop_size
         self.seed = seed
         self.augmentation = augmentation or AugmentationConfig()
-        self._epoch = torch.zeros((), dtype=torch.int64).share_memory_()
+        self._epoch = torch.zeros((), dtype=torch.int64)
+        cast(Any, self._epoch).share_memory_()
         metadata_path = self.root / "dataset.json"
         self.metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         if self.metadata.get("format_version") != 1:
@@ -58,11 +60,11 @@ class VocoderDataset(Dataset[Batch]):
     def _validate_item(
         self,
         relative: str,
-        audio: np.ndarray,
-        mel: np.ndarray,
-        f0: np.ndarray,
-        uv: np.ndarray,
-        pe: np.ndarray,
+        audio: NDArray[np.float32],
+        mel: NDArray[np.float32],
+        f0: NDArray[np.float32],
+        uv: NDArray[np.bool_],
+        pe: NDArray[np.int64],
     ) -> None:
         frames = mel.shape[0] if mel.ndim == 2 else -1
         if audio.ndim != 1 or mel.ndim != 2 or f0.ndim != 1 or uv.ndim != 1 or pe.ndim != 0:
@@ -73,8 +75,12 @@ class VocoderDataset(Dataset[Batch]):
             raise ValueError(f"non-finite arrays in {relative}")
 
     def _augment_volume(
-        self, index: int, relative: str, audio: np.ndarray, mel: np.ndarray
-    ) -> tuple[np.ndarray, np.ndarray, float]:
+        self,
+        index: int,
+        relative: str,
+        audio: NDArray[np.float32],
+        mel: NDArray[np.float32],
+    ) -> tuple[NDArray[np.float32], NDArray[np.float32], float]:
         config = self.augmentation
         if (
             self.split != "train"
