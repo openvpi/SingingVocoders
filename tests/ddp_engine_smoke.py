@@ -8,7 +8,9 @@ import torch.distributed
 from lightning_fabric import Fabric
 from lightning_fabric.utilities.seed import seed_everything
 from torch import nn
+from torch.utils.data.distributed import DistributedSampler
 
+from singing_vocoders.checkpoint import CheckpointManager
 from singing_vocoders.components import (
     Batch,
     ComponentRegistry,
@@ -102,8 +104,38 @@ def worker(fabric: Fabric, marker: Path) -> None:
         raise RuntimeError("logical step diverged")
     if any(state.successful_updates != 1 for state in engine.state.optimizers.values()):
         raise RuntimeError("optimizer update counters diverged")
+    sampler = DistributedSampler(
+        range(8),
+        num_replicas=fabric.world_size,
+        rank=fabric.global_rank,
+        shuffle=True,
+        seed=1234,
+    )
+    sampler.set_epoch(engine.state.epoch)
+    checkpoint_dir = marker.parent / "checkpoint"
+    manager = CheckpointManager(
+        checkpoint_dir,
+        config=config().model_dump(mode="json"),
+        config_fingerprint="ddp-test",
+        data_fingerprint="ddp-data",
+        keep_last=1,
+    )
+    checkpoint = manager.save(engine, sampler)
+    restored = FabricGanEngine(fabric, VocoderTask(config(), registry))
+    restored_sampler = DistributedSampler(
+        range(8),
+        num_replicas=fabric.world_size,
+        rank=fabric.global_rank,
+        shuffle=True,
+        seed=1234,
+    )
+    manager.load(restored, checkpoint, restored_sampler)
+    if restored.state.state_dict() != engine.state.state_dict():
+        raise RuntimeError("DDP checkpoint state diverged")
     fabric.barrier()
     if fabric.global_rank == 0:
+        if [path.name for path in checkpoint_dir.glob("*.ckpt")] != ["step-00000002.ckpt"]:
+            raise RuntimeError("DDP checkpoint writer or naming is invalid")
         marker.write_text("ok\n", encoding="utf-8")
     fabric.barrier()
 

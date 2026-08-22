@@ -74,7 +74,7 @@ class Muon(Optimizer):
 
     @torch.no_grad()
     def step(self, closure: Callable[[], float] | None = None) -> float | None:
-        with torch.enable_grad():  # type: ignore[no-untyped-call]
+        with torch.enable_grad():
             loss = None if closure is None else closure()
         for group in self.param_groups:
             shape_groups: dict[tuple[Any, ...], dict[str, list[Tensor]]] = {}
@@ -254,7 +254,7 @@ class MuonAdamW(Optimizer):
 
     @torch.no_grad()
     def step(self, closure: Callable[[], float] | None = None) -> float | None:
-        with torch.enable_grad():  # type: ignore[no-untyped-call]
+        with torch.enable_grad():
             loss = None if closure is None else closure()
         self._synchronize_groups()
         if self.muon is not None:

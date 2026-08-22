@@ -44,13 +44,17 @@ def _capture_rng() -> dict[str, Any]:
         "python": random.getstate(),
         "numpy": {
             "algorithm": numpy_state[0],
-            "keys": torch.from_numpy(numpy_state[1].copy()),
+            "keys": numpy_state[1].tolist(),
             "position": numpy_state[2],
             "has_gauss": numpy_state[3],
             "cached_gaussian": numpy_state[4],
         },
-        "torch": torch.get_rng_state(),
-        "cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else [],
+        "torch": torch.get_rng_state().tolist(),
+        "cuda": (
+            [state.tolist() for state in torch.cuda.get_rng_state_all()]
+            if torch.cuda.is_available()
+            else []
+        ),
     }
 
 
@@ -73,15 +77,17 @@ def _restore_rng(state: dict[str, Any]) -> None:
     np.random.set_state(
         (
             numpy_state["algorithm"],
-            numpy_state["keys"].cpu().numpy(),
+            np.asarray(numpy_state["keys"], dtype=np.uint32),
             numpy_state["position"],
             numpy_state["has_gauss"],
             numpy_state["cached_gaussian"],
         )
     )
-    torch.set_rng_state(state["torch"].cpu())
+    torch.set_rng_state(torch.tensor(state["torch"], dtype=torch.uint8))
     if torch.cuda.is_available() and state["cuda"]:
-        torch.cuda.set_rng_state_all(state["cuda"])
+        torch.cuda.set_rng_state_all(
+            [torch.tensor(item, dtype=torch.uint8) for item in state["cuda"]]
+        )
 
 
 def _schema_hash(state: dict[str, Tensor]) -> str:

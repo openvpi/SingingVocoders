@@ -136,6 +136,7 @@ def train_worker(
     warm_start_scope: Literal["generator", "all"],
 ) -> str | None:
     config = loaded.config
+    torch.set_float32_matmul_precision(config.runtime.matmul_precision)
     fabric.seed_everything(config.runtime.seed, workers=True)
     if fabric.global_rank == 0:
         run_dir.mkdir(parents=True, exist_ok=False)
@@ -208,6 +209,7 @@ def validate_worker(
     max_batches: int | None,
 ) -> dict[str, float] | None:
     config = loaded.config
+    torch.set_float32_matmul_precision(config.runtime.matmul_precision)
     fabric.seed_everything(config.runtime.seed, workers=True)
     train_loader, valid_loader, loaders = _setup_loaders(fabric, config)
     engine = FabricGanEngine(fabric, VocoderTask(config))

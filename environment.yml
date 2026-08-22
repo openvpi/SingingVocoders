@@ -7,6 +7,6 @@ dependencies:
   - setuptools=80.9.0
   - pyworld=0.3.5
   - pip:
-      - --extra-index-url https://download.pytorch.org/whl/cu128
+      - --extra-index-url https://download.pytorch.org/whl/cu130
       - -r requirements-win-64.txt
       - -e .[dev]

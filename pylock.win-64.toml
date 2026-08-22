@@ -641,25 +641,25 @@ sha256 = "43a0b8fd5a2928500110039e43a5eed8480b918967083ea48dc3ab9f13c4a7fb"
 
 [[packages]]
 name = "torch"
-version = "2.9.1+cu128"
+version = "2.11.0+cu130"
 
 [[packages.wheels]]
-name = "torch-2.9.1+cu128-cp311-cp311-win_amd64.whl"
-url = "https://download-r2.pytorch.org/whl/cu128/torch-2.9.1%2Bcu128-cp311-cp311-win_amd64.whl"
+name = "torch-2.11.0+cu130-cp311-cp311-win_amd64.whl"
+url = "https://download-r2.pytorch.org/whl/cu130/torch-2.11.0%2Bcu130-cp311-cp311-win_amd64.whl"
 
 [packages.wheels.hashes]
-sha256 = "633005a3700e81b5be0df2a7d3c1d48aced23ed927653797a3bd2b144a3aeeb6"
+sha256 = "a1ff66c0ad21bf48c3187e84a08a6895d48e9bae435e27811b0b65f36bef4555"
 
 [[packages]]
 name = "torchaudio"
-version = "2.9.1+cu128"
+version = "2.11.0+cu130"
 
 [[packages.wheels]]
-name = "torchaudio-2.9.1+cu128-cp311-cp311-win_amd64.whl"
-url = "https://download-r2.pytorch.org/whl/cu128/torchaudio-2.9.1%2Bcu128-cp311-cp311-win_amd64.whl"
+name = "torchaudio-2.11.0+cu130-cp311-cp311-win_amd64.whl"
+url = "https://download-r2.pytorch.org/whl/cu130/torchaudio-2.11.0%2Bcu130-cp311-cp311-win_amd64.whl"
 
 [packages.wheels.hashes]
-sha256 = "c91eea923573e7b02611a324232e4adb7aad5f828aa875b1f48241c228980899"
+sha256 = "04aadf807c27df785c6e3463e70bb1a657ed2d1a16b5578114c9fdf7e8c1ac10"
 
 [[packages]]
 name = "typing-extensions"
