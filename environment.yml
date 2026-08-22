@@ -1,0 +1,12 @@
+name: singing-vocoders-refactor
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11.14
+  - pip=25.2
+  - setuptools=80.9.0
+  - pyworld=0.3.5
+  - pip:
+      - --extra-index-url https://download.pytorch.org/whl/cu128
+      - -r requirements-win-64.txt
+      - -e .[dev]

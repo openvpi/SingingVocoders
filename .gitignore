@@ -162,3 +162,10 @@ cython_debug/
 /data/
 /experiments/
 /pretrained/
+/exports/
+/runs/
+
+# Local build and type-check state
+/.ruff_cache/
+/.pytest_cache/
+/.mypy_cache/
