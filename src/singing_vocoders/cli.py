@@ -192,20 +192,28 @@ def checkpoint_inspect(path: Path) -> None:
 
 
 @main.command("export")
-@click.argument("recipe")
 @click.argument("checkpoint", type=click.Path(path_type=Path, exists=True, dir_okay=False))
 @click.argument("output", type=click.Path(path_type=Path, dir_okay=False))
+@click.option("--recipe", default=None, help="Recipe required only for a legacy checkpoint.")
 @click.option("--set", "overrides", multiple=True, metavar="KEY=VALUE")
 def export_command(
-    recipe: str,
     checkpoint: Path,
     output: Path,
+    recipe: str | None,
     overrides: tuple[str, ...],
 ) -> None:
-    """Export CHECKPOINT and its DiffSinger config for RECIPE."""
-    loaded = _load(recipe, overrides)
+    """Export an NSF CHECKPOINT and its DiffSinger configuration."""
+    report = inspect_checkpoint(checkpoint)
+    if report["format_version"] == 1:
+        if recipe is not None or overrides:
+            raise click.UsageError("versioned checkpoints use their embedded recipe")
+        resolved_config = None
+    else:
+        if recipe is None:
+            raise click.UsageError("--recipe is required for a legacy checkpoint")
+        resolved_config = _load(recipe, overrides).resolved
     checkpoint_path, config_path = export_diffsinger(
-        checkpoint, output, resolved_config=loaded.resolved
+        checkpoint, output, resolved_config=resolved_config
     )
     click.echo(
         json.dumps(

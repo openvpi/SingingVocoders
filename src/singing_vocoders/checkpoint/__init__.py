@@ -4,6 +4,7 @@ from singing_vocoders.checkpoint.io import (
     LegacyLoadReport,
     inspect_checkpoint,
     load_legacy_weights,
+    preserve_rng_state,
 )
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     "export_diffsinger",
     "inspect_checkpoint",
     "load_legacy_weights",
+    "preserve_rng_state",
 ]
