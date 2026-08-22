@@ -23,6 +23,8 @@ from singing_vocoders.config.schema import (
     OneStepObjectiveConfig,
     UnivObjectiveConfig,
 )
+
+
 @dataclass(slots=True)
 class LossResult:
     loss: Tensor
