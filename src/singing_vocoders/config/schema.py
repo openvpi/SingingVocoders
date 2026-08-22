@@ -71,33 +71,92 @@ class AugmentationConfig(StrictModel):
     pc_key_range: float = Field(default=12.0, ge=0)
 
 
+class MultiResolutionSTFTConfig(StrictModel):
+    fft_sizes: tuple[PositiveInt, ...]
+    hop_sizes: tuple[PositiveInt, ...]
+    win_lengths: tuple[PositiveInt, ...]
+
+    @model_validator(mode="after")
+    def validate_resolutions(self) -> MultiResolutionSTFTConfig:
+        if not self.fft_sizes:
+            raise ValueError("at least one STFT resolution is required")
+        if not (len(self.fft_sizes) == len(self.hop_sizes) == len(self.win_lengths)):
+            raise ValueError("STFT resolution lists must have equal lengths")
+        if any(win > fft for fft, win in zip(self.fft_sizes, self.win_lengths, strict=True)):
+            raise ValueError("STFT window length must not exceed FFT size")
+        return self
+
+
+def _hifi_stft() -> MultiResolutionSTFTConfig:
+    return MultiResolutionSTFTConfig(
+        fft_sizes=(2048, 2048, 4096, 1024, 512, 256, 128, 1024, 2048, 512),
+        hop_sizes=(512, 240, 480, 100, 50, 25, 12, 120, 240, 50),
+        win_lengths=(2048, 1200, 2400, 480, 240, 120, 60, 600, 1200, 240),
+    )
+
+
+def _univ_stft() -> MultiResolutionSTFTConfig:
+    return MultiResolutionSTFTConfig(
+        fft_sizes=(2048, 2048, 4096, 1024, 512, 256, 128),
+        hop_sizes=(512, 240, 480, 100, 50, 25, 12),
+        win_lengths=(2048, 1200, 2400, 480, 240, 120, 60),
+    )
+
+
+def _ddsp_stft() -> MultiResolutionSTFTConfig:
+    return MultiResolutionSTFTConfig(
+        fft_sizes=(2048, 1024, 2048, 512, 1024),
+        hop_sizes=(512, 120, 240, 50, 256),
+        win_lengths=(2048, 600, 1200, 240, 512),
+    )
+
+
 class HiFiObjectiveConfig(StrictModel):
     name: Literal["hifigan"]
     mel_weight: float = Field(default=45.0, ge=0)
-    feature_weight: float = Field(default=2.0, ge=0)
-    adversarial_weight: float = Field(default=1.0, ge=0)
     stft_weight: float = Field(default=0.0, ge=0)
+    stft: MultiResolutionSTFTConfig = Field(default_factory=_hifi_stft)
+    feature_weight: float = Field(default=1.0, ge=0)
+    adversarial_weight: float = Field(default=1.0, ge=0)
+    pc_weight: float = Field(default=30.0, ge=0)
 
 
 class UnivObjectiveConfig(StrictModel):
     name: Literal["univnet", "nsf_univnet", "nsf_univnet_msd"]
-    aux_weight: float = Field(default=1.0, ge=0)
-    feature_weight: float = Field(default=2.0, ge=0)
+    aux_weight: float = Field(default=2.5, ge=0)
+    stft: MultiResolutionSTFTConfig = Field(default_factory=_univ_stft)
+    feature_weight: float = Field(default=1.0, ge=0)
     adversarial_weight: float = Field(default=1.0, ge=0)
 
 
 class DDSPObjectiveConfig(StrictModel):
     name: Literal["ddsp", "ddsp_univnet"]
-    aux_weight: float = Field(default=1.0, ge=0)
-    feature_weight: float = Field(default=2.0, ge=0)
+    aux_weight: float = Field(default=45.0, ge=0)
+    stft: MultiResolutionSTFTConfig = Field(default_factory=_ddsp_stft)
+    ddsp_weight: float = Field(default=2.0, ge=0)
+    rss_fft_min: PositiveInt = 256
+    rss_fft_max: PositiveInt = 2_048
+    rss_scales: PositiveInt = 4
+    uv_weight: float = Field(default=1.0, ge=0)
+    uv_detach_steps: int = Field(default=2_000, ge=0)
+    uv_tolerance: float = Field(default=0.15, ge=0)
+    feature_weight: float = Field(default=1.0, ge=0)
     adversarial_weight: float = Field(default=1.0, ge=0)
+
+    @model_validator(mode="after")
+    def validate_rss_range(self) -> DDSPObjectiveConfig:
+        if self.rss_fft_min >= self.rss_fft_max:
+            raise ValueError("rss_fft_min must be smaller than rss_fft_max")
+        return self
 
 
 class HiFiVAEObjectiveConfig(StrictModel):
     name: Literal["hifivae"]
-    mel_weight: float = Field(default=45.0, ge=0)
-    kl_weight: float = Field(default=1.0, ge=0)
-    feature_weight: float = Field(default=2.0, ge=0)
+    stft_weight: float = Field(default=2.5, ge=0)
+    stft: MultiResolutionSTFTConfig = Field(default_factory=_hifi_stft)
+    kl_weight: float = Field(default=0.02, ge=0)
+    waveform_weight: float = Field(default=0.0, ge=0)
+    feature_weight: float = Field(default=1.0, ge=0)
     adversarial_weight: float = Field(default=1.0, ge=0)
 
 
@@ -105,6 +164,9 @@ class OneStepObjectiveConfig(StrictModel):
     name: Literal["one_step"]
     mel_weight: float = Field(default=45.0, ge=0)
     adversarial_weight: float = Field(default=1.0, ge=0)
+    feature_weight: float = Field(default=1.0, ge=0)
+    discriminator_weight: float = Field(default=1.0, ge=0)
+    pc_weight: float = Field(default=30.0, ge=0)
 
 
 ObjectiveConfig = Annotated[
@@ -135,6 +197,7 @@ class MuonAdamWConfig(StrictModel):
     adamw_lr: float = Field(default=5e-4, gt=0)
     adamw_betas: tuple[float, float] = (0.9, 0.95)
     adamw_eps: float = Field(default=1e-8, gt=0)
+    adamw_weight_decay: float = Field(default=0.0, ge=0)
 
 
 OptimizerConfig = Annotated[AdamWConfig | MuonAdamWConfig, Field(discriminator="name")]

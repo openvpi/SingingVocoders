@@ -21,5 +21,15 @@ model:
 objective:
   name: ddsp_univnet
   aux_weight: 2.5
+  stft:
+    fft_sizes: [2048, 2048, 4096, 1024, 512, 256, 128]
+    hop_sizes: [512, 240, 480, 100, 50, 25, 12]
+    win_lengths: [2048, 1200, 2400, 480, 240, 120, 60]
+  ddsp_weight: 2
+  rss_fft_min: 256
+  rss_fft_max: 2048
+  rss_scales: 4
+  uv_weight: 1
+  uv_detach_steps: 2000
   feature_weight: 1
   adversarial_weight: 1

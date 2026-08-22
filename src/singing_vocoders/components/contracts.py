@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -40,13 +39,11 @@ class DiscriminatorOutput:
     feature_maps: list[list[Tensor]]
 
 
-class GeneratorComponent(nn.Module, ABC):
-    @abstractmethod
+class GeneratorComponent(nn.Module):
     def forward(self, batch: Batch) -> GeneratorOutput:
         raise NotImplementedError
 
 
-class DiscriminatorComponent(nn.Module, ABC):
-    @abstractmethod
+class DiscriminatorComponent(nn.Module):
     def forward(self, audio: Tensor) -> DiscriminatorOutput:
         raise NotImplementedError

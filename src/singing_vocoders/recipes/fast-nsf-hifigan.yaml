@@ -25,8 +25,13 @@ model:
         strides: [4, 4, 4]
         kernel_size: 11
 objective:
-  name: univnet
-  aux_weight: 45
+  name: hifigan
+  mel_weight: 45
+  stft_weight: 2.5
+  stft:
+    fft_sizes: [2048, 2048, 4096, 1024, 512, 256, 128, 1024]
+    hop_sizes: [512, 240, 480, 100, 50, 25, 12, 120]
+    win_lengths: [2048, 1200, 2400, 480, 240, 120, 60, 600]
   feature_weight: 1
   adversarial_weight: 1
 optimization:
