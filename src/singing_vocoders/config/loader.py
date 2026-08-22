@@ -4,7 +4,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from omegaconf import DictConfig, ListConfig, OmegaConf
 
@@ -40,8 +40,8 @@ def _load_tree(path: Path, stack: tuple[Path, ...]) -> DictConfig:
         if not isinstance(base_value, str):
             raise TypeError(f"base path must be a string in {resolved_path}")
         base_path = (resolved_path.parent / base_value).resolve()
-        merged = OmegaConf.merge(merged, _load_tree(base_path, next_stack))
-    return OmegaConf.merge(merged, current)
+        merged = cast(DictConfig, OmegaConf.merge(merged, _load_tree(base_path, next_stack)))
+    return cast(DictConfig, OmegaConf.merge(merged, current))
 
 
 def _fingerprint(value: dict[str, Any]) -> str:
@@ -53,7 +53,7 @@ def load_config(path: str | Path, overrides: tuple[str, ...] = ()) -> LoadedConf
     config_path = Path(path).resolve()
     merged = _load_tree(config_path, ())
     if overrides:
-        merged = OmegaConf.merge(merged, OmegaConf.from_dotlist(list(overrides)))
+        merged = cast(DictConfig, OmegaConf.merge(merged, OmegaConf.from_dotlist(list(overrides))))
     OmegaConf.resolve(merged)
     value = OmegaConf.to_container(merged, resolve=True, enum_to_str=True)
     if not isinstance(value, dict):
