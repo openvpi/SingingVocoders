@@ -14,3 +14,9 @@ soundfile==0.14.0
 tensorboard==2.21.0
 torch==2.11.0+cu130
 torchaudio==2.11.0+cu130
+
+mypy==1.18.2
+pytest==8.4.2
+pytest-cov==7.0.0
+ruff==0.14.10
+types-PyYAML==6.0.12.20250915

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools==80.9.0", "wheel==0.45.1"]
+requires = ["setuptools==80.9.0", "wheel==0.48.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -19,6 +19,7 @@ dependencies = [
   "omegaconf==2.3.1",
   "praat-parselmouth==0.4.7",
   "pydantic==2.13.4",
+  "pyworld==0.3.5",
   "PyYAML==6.0.3",
   "setuptools==80.9.0",
   "soundfile==0.14.0",
@@ -42,6 +43,7 @@ vocoder = "singing_vocoders.cli:main"
 [tool.setuptools]
 package-dir = { "" = "src" }
 include-package-data = true
+license-files = ["LICENSE", "LICENSES/*.txt", "THIRD_PARTY_NOTICES.md"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -56,11 +58,6 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-extend-exclude = [
-  "src/singing_vocoders/models",
-  "src/singing_vocoders/modules",
-  "src/singing_vocoders/utils",
-]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
@@ -79,14 +76,3 @@ module = [
   "tensorboard.*",
 ]
 ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = [
-  "singing_vocoders.models.*",
-  "singing_vocoders.modules.*",
-]
-ignore_errors = true
-
-[[tool.mypy.overrides]]
-module = "singing_vocoders.components.builtin"
-disable_error_code = ["no-untyped-call", "override"]
