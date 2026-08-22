@@ -88,6 +88,19 @@ class OptimizerRuntime:
         return self.state.micro_steps % self.config.accumulate == 0
 
 
+@contextmanager
+def _temporarily_frozen(module: nn.Module) -> Iterator[None]:
+    parameters = list(module.parameters())
+    original = [parameter.requires_grad for parameter in parameters]
+    for parameter in parameters:
+        parameter.requires_grad_(False)
+    try:
+        yield
+    finally:
+        for parameter, requires_grad in zip(parameters, original, strict=True):
+            parameter.requires_grad_(requires_grad)
+
+
 @dataclass(slots=True)
 class JointForwardOutput:
     generated: GeneratorOutput
@@ -102,10 +115,41 @@ class _DiscriminatorEnsemble(nn.Module):
         self.components = components
 
     def discriminate(self, audio: Tensor) -> dict[str, DiscriminatorOutput]:
-        return {
-            name: cast(DiscriminatorOutput, discriminator(audio))
-            for name, discriminator in self.components.items()
-        }
+        outputs: dict[str, DiscriminatorOutput] = {}
+        for name, discriminator in self.components.items():
+            output = discriminator(audio)
+            if not isinstance(output, DiscriminatorOutput):
+                raise TypeError(f"discriminator {name} returned an invalid output")
+            if not output.scores or len(output.scores) != len(output.feature_maps):
+                raise ValueError(
+                    f"discriminator {name} must return non-empty aligned scores and feature maps"
+                )
+            if any(
+                score.ndim < 1 or not score.is_floating_point() or score.device != audio.device
+                for score in output.scores
+            ):
+                raise ValueError(f"discriminator {name} scores violate the tensor contract")
+            if any(score.shape[0] != audio.shape[0] for score in output.scores):
+                raise ValueError(f"discriminator {name} score batch does not match its audio input")
+            if any(
+                not branch
+                or any(
+                    feature.ndim < 1
+                    or not feature.is_floating_point()
+                    or feature.device != audio.device
+                    for feature in branch
+                )
+                for branch in output.feature_maps
+            ):
+                raise ValueError(f"discriminator {name} feature maps violate the tensor contract")
+            if any(
+                feature.shape[0] != audio.shape[0]
+                for branch in output.feature_maps
+                for feature in branch
+            ):
+                raise ValueError(f"discriminator {name} feature maps do not match its audio input")
+            outputs[name] = output
+        return outputs
 
     def forward(
         self, real_audio: Tensor, fake_audio: Tensor
@@ -125,7 +169,8 @@ class _JointTrainingModule(nn.Module):
             raise TypeError("generator returned an invalid output")
         real = self.discriminator.discriminate(batch.audio)
         fake_detached = self.discriminator.discriminate(generated.audio.detach())
-        fake_connected = self.discriminator.discriminate(generated.audio)
+        with _temporarily_frozen(self.discriminator):
+            fake_connected = self.discriminator.discriminate(generated.audio)
         return JointForwardOutput(generated, real, fake_detached, fake_connected)
 
 
@@ -143,6 +188,7 @@ class FabricGanEngine:
         self.generator: nn.Module | None = None
         self.discriminator: nn.Module | None = None
         self.joint_module: nn.Module | None = None
+        self._joint_generator: GeneratorStage | None = None
         self._setup_modules(task)
         task.objective.to(fabric.device)
 
@@ -184,7 +230,9 @@ class FabricGanEngine:
     def _setup_modules(self, task: VocoderTask) -> None:
         plan = task.config.optimization
         if isinstance(plan, JointPlanConfig):
-            self.joint_module = self._setup_one(_JointTrainingModule(task), self.slots["joint"])
+            joint_module = _JointTrainingModule(task)
+            self._joint_generator = joint_module.generator
+            self.joint_module = self._setup_one(joint_module, self.slots["joint"])
             return
         self.generator = self._setup_one(
             GeneratorStage(task.generator, task.config), self.slots["generator"]
@@ -193,35 +241,132 @@ class FabricGanEngine:
 
     @contextmanager
     def _frozen_discriminators(self) -> Iterator[None]:
-        parameters = list(self.raw_task.discriminator.parameters())
-        original = [parameter.requires_grad for parameter in parameters]
-        for parameter in parameters:
-            parameter.requires_grad_(False)
+        with _temporarily_frozen(self.raw_task.discriminator):
+            yield
+
+    @contextmanager
+    def _evaluation_mode(self) -> Iterator[None]:
+        modules = [
+            module
+            for module in (self.raw_task, self.generator, self.joint_module)
+            if module is not None
+        ]
+        training_modes = [module.training for module in modules]
+        for module in modules:
+            module.eval()
         try:
             yield
         finally:
-            for parameter, requires_grad in zip(parameters, original, strict=True):
-                parameter.requires_grad_(requires_grad)
+            for module, training in zip(modules, training_modes, strict=True):
+                module.train(training)
 
     def _generate(self, batch: Batch) -> GeneratorOutput:
-        module = self.raw_task.generator if self.generator is None else self.generator
-        output = module(batch)
+        if self.generator is None:
+            if self._joint_generator is None:
+                raise RuntimeError("joint generator stage is unavailable")
+            with self.fabric.autocast():
+                output = self._joint_generator(batch)
+            output = GeneratorOutput(
+                output.audio.float(),
+                {
+                    name: value.float() if value.is_floating_point() else value
+                    for name, value in output.aux.items()
+                },
+            )
+        else:
+            output = self.generator(batch)
         if not isinstance(output, GeneratorOutput):
             raise TypeError("generator returned an invalid output")
         return output
 
     def _raw_discriminate(self, audio: Tensor) -> dict[str, DiscriminatorOutput]:
-        return self._raw_discriminator.discriminate(audio)
+        with self.fabric.autocast():
+            outputs = self._raw_discriminator.discriminate(audio)
+        return {
+            name: DiscriminatorOutput(
+                [score.float() for score in output.scores],
+                [[feature.float() for feature in branch] for branch in output.feature_maps],
+            )
+            for name, output in outputs.items()
+        }
 
     def _scaler_scale(self) -> float | None:
         scaler = getattr(self.fabric.strategy.precision, "scaler", None)
         return None if scaler is None else float(scaler.get_scale())
 
+    def _rescale_pending_gradients(
+        self,
+        stepped_slot: OptimizerRuntime,
+        scale_before: float | None,
+        scale_after: float | None,
+    ) -> None:
+        if (
+            scale_before is None
+            or scale_after is None
+            or scale_before == scale_after
+            or scale_before <= 0
+            or scale_after <= 0
+        ):
+            return
+        factor = scale_after / scale_before
+        for slot in self.slots.values():
+            if slot is stepped_slot or slot.state.micro_steps % slot.config.accumulate == 0:
+                continue
+            for parameter_group in slot.optimizer.param_groups:
+                for parameter in parameter_group["params"]:
+                    if parameter.grad is not None:
+                        parameter.grad.mul_(factor)
+
+    @contextmanager
+    def _optimization_context(self, slot: OptimizerRuntime) -> Iterator[None]:
+        if slot.module is None:
+            raise RuntimeError(f"optimizer module is not configured: {slot.name}")
+        if slot.cycle_start:
+            slot.optimizer.zero_grad(set_to_none=True)
+        with self.fabric.no_backward_sync(cast(Any, slot.module), enabled=not slot.boundary):
+            yield
+
     @staticmethod
     def _ensure_finite_loss(loss: Tensor, phase: str, batch: Batch) -> None:
         if not torch.isfinite(loss.detach()).all():
             item = batch.metadata[0].get("item", "unknown") if batch.metadata else "unknown"
-            raise FloatingPointError(f"non-finite {phase} loss at item {item}")
+            raise FloatingPointError(
+                f"non-finite loss in {phase} component objective at item {item}"
+            )
+
+    @staticmethod
+    def _gradient_component(slot: OptimizerRuntime, parameter_name: str) -> str:
+        parts = parameter_name.split(".")
+        if "components" in parts:
+            index = parts.index("components")
+            if index + 1 < len(parts):
+                return f"discriminator.{parts[index + 1]}"
+        if "generator" in parts or slot.name == "generator":
+            return "generator"
+        return slot.name
+
+    @classmethod
+    def _ensure_finite_gradients(
+        cls,
+        slot: OptimizerRuntime,
+        phase: str,
+        batch: Batch,
+    ) -> None:
+        if slot.module is None:
+            raise RuntimeError(f"optimizer module is not configured: {slot.name}")
+        for parameter_name, parameter in slot.module.named_parameters():
+            gradient = parameter.grad
+            if gradient is None:
+                continue
+            values = gradient.coalesce().values() if gradient.is_sparse else gradient
+            if torch.isfinite(values).all():
+                continue
+            item = batch.metadata[0].get("item", "unknown") if batch.metadata else "unknown"
+            component = cls._gradient_component(slot, parameter_name)
+            raise FloatingPointError(
+                f"non-finite gradient in {phase} component {component} "
+                f"parameter {parameter_name} at item {item}"
+            )
 
     def _backward_and_maybe_step(
         self, slot: OptimizerRuntime, loss: Tensor, phase: str, batch: Batch
@@ -229,11 +374,11 @@ class FabricGanEngine:
         self._ensure_finite_loss(loss, phase, batch)
         if slot.module is None:
             raise RuntimeError(f"optimizer module is not configured: {slot.name}")
-        if slot.cycle_start:
-            slot.optimizer.zero_grad(set_to_none=True)
         should_step = slot.boundary
-        with self.fabric.no_backward_sync(cast(Any, slot.module), enabled=not should_step):
-            self.fabric.backward(loss / slot.config.accumulate)
+        self.fabric.backward(loss / slot.config.accumulate)
+        uses_gradient_scaler = self._scaler_scale() is not None
+        if not uses_gradient_scaler:
+            self._ensure_finite_gradients(slot, phase, batch)
         slot.state.micro_steps += 1
         if not should_step:
             return False
@@ -247,7 +392,7 @@ class FabricGanEngine:
                     if slot.config.clip_grad_norm is not None
                     else float("inf")
                 ),
-                error_if_nonfinite=True,
+                error_if_nonfinite=not uses_gradient_scaler,
             )
         except RuntimeError as error:
             if "non-finite" not in str(error):
@@ -257,6 +402,7 @@ class FabricGanEngine:
         scale_before = self._scaler_scale()
         slot.optimizer.step()
         scale_after = self._scaler_scale()
+        self._rescale_pending_gradients(slot, scale_before, scale_after)
         succeeded = scale_before is None or scale_after is None or scale_after >= scale_before
         if succeeded:
             slot.state.successful_updates += 1
@@ -283,57 +429,84 @@ class FabricGanEngine:
     ) -> dict[str, Tensor]:
         if self.discriminator is None:
             raise RuntimeError("separate discriminator is unavailable for a joint plan")
-        output = self.discriminator(batch.audio, generated.audio.detach())
-        if not isinstance(output, tuple) or len(output) != 2:
-            raise TypeError("discriminator ensemble returned an invalid output")
-        real, fake = output
-        result = self.raw_task.objective.discriminator_loss(real, fake)
-        self._backward_and_maybe_step(slot, result.loss, "discriminator", batch)
+        with self._optimization_context(slot):
+            output = self.discriminator(batch.audio, generated.audio.detach())
+            if not isinstance(output, tuple) or len(output) != 2:
+                raise TypeError("discriminator ensemble returned an invalid output")
+            real, fake = output
+            result = self.raw_task.objective.discriminator_loss(real, fake)
+            self._backward_and_maybe_step(slot, result.loss, "discriminator", batch)
         return result.metrics
 
     def _run_joint_phase(self, batch: Batch) -> tuple[GeneratorOutput, dict[str, Tensor]]:
         if self.joint_module is None:
             raise RuntimeError("joint module is unavailable for an alternating plan")
-        output = self.joint_module(batch)
-        if not isinstance(output, JointForwardOutput):
-            raise TypeError("joint module returned an invalid output")
-        result = self.raw_task.objective.joint_loss(
-            batch,
-            output.generated,
-            output.real,
-            output.fake_detached,
-            output.fake_connected,
-            self.state.logical_step,
-        )
-        self._backward_and_maybe_step(self.slots["joint"], result.loss, "joint", batch)
+        slot = self.slots["joint"]
+        with self._optimization_context(slot):
+            output = self.joint_module(batch)
+            if not isinstance(output, JointForwardOutput):
+                raise TypeError("joint module returned an invalid output")
+            result = self.raw_task.objective.joint_loss(
+                batch,
+                output.generated,
+                output.real,
+                output.fake_detached,
+                output.fake_connected,
+                self.state.logical_step,
+            )
+            self._backward_and_maybe_step(slot, result.loss, "joint", batch)
         return output.generated, result.metrics
 
     def train_step(self, batch: Batch) -> dict[str, Tensor]:
         plan = self.raw_task.config.optimization
         metrics: dict[str, Tensor]
         if isinstance(plan, JointPlanConfig):
-            generated, metrics = self._run_joint_phase(batch)
+            joint = self.slots["joint"]
+            if self.state.logical_step % joint.config.frequency == 0:
+                generated, metrics = self._run_joint_phase(batch)
+            else:
+                with torch.no_grad():
+                    generated = self._generate(batch)
+                metrics = {}
         else:
-            generated = self._generate(batch)
             metrics = {}
+            generator = self.slots["generator"]
+            discriminator = self.slots["discriminator"]
             if (
                 isinstance(plan, WarmupAlternatingPlanConfig)
                 and self.state.logical_step < plan.aux_steps
             ):
-                result = self.raw_task.objective.auxiliary_loss(
-                    batch, generated, self.state.logical_step
-                )
-                self._backward_and_maybe_step(
-                    self.slots["generator"], result.loss, "generator_aux", batch
-                )
-                metrics.update(result.metrics)
-            else:
-                discriminator = self.slots["discriminator"]
-                generator = self.slots["generator"]
-                if self.state.logical_step % discriminator.config.frequency == 0:
-                    metrics.update(self._run_discriminator_phase(batch, generated, discriminator))
                 if self.state.logical_step % generator.config.frequency == 0:
-                    metrics.update(self._run_generator_phase(batch, generated, generator))
+                    with self._optimization_context(generator):
+                        generated = self._generate(batch)
+                        result = self.raw_task.objective.auxiliary_loss(
+                            batch, generated, self.state.logical_step
+                        )
+                        self._backward_and_maybe_step(
+                            generator, result.loss, "generator_aux", batch
+                        )
+                    metrics.update(result.metrics)
+                else:
+                    with torch.no_grad():
+                        generated = self._generate(batch)
+            else:
+                run_discriminator = self.state.logical_step % discriminator.config.frequency == 0
+                run_generator = self.state.logical_step % generator.config.frequency == 0
+                if run_generator:
+                    with self._optimization_context(generator):
+                        generated = self._generate(batch)
+                        if run_discriminator:
+                            metrics.update(
+                                self._run_discriminator_phase(batch, generated, discriminator)
+                            )
+                        metrics.update(self._run_generator_phase(batch, generated, generator))
+                else:
+                    with torch.no_grad():
+                        generated = self._generate(batch)
+                    if run_discriminator:
+                        metrics.update(
+                            self._run_discriminator_phase(batch, generated, discriminator)
+                        )
         self.state.logical_step += 1
         metrics["steps/logical"] = generated.audio.new_tensor(float(self.state.logical_step))
         for name, slot in self.slots.items():
@@ -347,49 +520,66 @@ class FabricGanEngine:
 
     @torch.no_grad()
     def validate(self, loader: Any, max_batches: int | None = None) -> dict[str, Tensor]:
-        self.raw_task.eval()
-        if self.generator is not None:
-            self.generator.eval()
-        if self.joint_module is not None:
-            self.joint_module.eval()
-        total: Tensor | None = None
-        count = 0
-        for batch in loader:
-            batch = batch.to(self.fabric.device, non_blocking=True)
-            generated = self._generate(batch)
-            loss = self.raw_task.objective.auxiliary_loss(
-                batch, generated, self.state.logical_step
-            ).loss.detach()
-            total = loss if total is None else total + loss
-            count += 1
-            if max_batches is not None and count >= max_batches:
-                break
-        self.raw_task.train()
-        if self.generator is not None:
-            self.generator.train()
-        if self.joint_module is not None:
-            self.joint_module.train()
-        if total is None:
+        weighted_total: Tensor | None = None
+        sample_count = 0.0
+        batch_count = 0
+        with self._evaluation_mode():
+            for batch in loader:
+                batch = batch.to(self.fabric.device, non_blocking=True)
+                generated = self._generate(batch)
+                batch_size = batch.audio.shape[0]
+                if len(batch.metadata) not in {0, batch_size}:
+                    raise ValueError("validation metadata count does not match the batch")
+                if weighted_total is None:
+                    weighted_total = generated.audio.new_zeros(())
+                for index in range(batch_size):
+                    weight = (
+                        float(batch.metadata[index].get("validation_weight", 1.0))
+                        if batch.metadata
+                        else 1.0
+                    )
+                    if weight not in {0.0, 1.0}:
+                        raise ValueError("validation sample weight must be zero or one")
+                    if weight == 0:
+                        continue
+                    sample_batch = Batch(
+                        audio=batch.audio[index : index + 1],
+                        mel=batch.mel[index : index + 1],
+                        f0=batch.f0[index : index + 1],
+                        uv=batch.uv[index : index + 1],
+                        pe=batch.pe[index : index + 1],
+                        metadata=batch.metadata[index : index + 1] if batch.metadata else [],
+                    )
+                    sample_generated = GeneratorOutput(
+                        audio=generated.audio[index : index + 1],
+                        aux={
+                            name: value[index : index + 1]
+                            if value.ndim > 0 and value.shape[0] == batch_size
+                            else value
+                            for name, value in generated.aux.items()
+                        },
+                    )
+                    loss = self.raw_task.objective.auxiliary_loss(
+                        sample_batch,
+                        sample_generated,
+                        self.state.logical_step,
+                    ).loss.detach()
+                    weighted_total = weighted_total + loss * weight
+                    sample_count += weight
+                batch_count += 1
+                if max_batches is not None and batch_count >= max_batches:
+                    break
+        if weighted_total is None:
             raise ValueError("validation loader is empty")
-        result = cast(Tensor, self.fabric.all_reduce(total / count, reduce_op="mean"))
+        totals = torch.stack((weighted_total, weighted_total.new_tensor(float(sample_count))))
+        reduced = cast(Tensor, self.fabric.all_reduce(totals, reduce_op="sum"))
+        result = reduced[0] / reduced[1]
         return {"validation/loss": result}
 
     @torch.no_grad()
     def predict(self, batch: Batch) -> GeneratorOutput:
-        was_training = self.raw_task.training
-        self.raw_task.eval()
-        if self.generator is not None:
-            self.generator.eval()
-        if self.joint_module is not None:
-            self.joint_module.eval()
-        output = self._generate(batch.to(self.fabric.device, non_blocking=True))
-        if was_training:
-            self.raw_task.train()
-            if self.generator is not None:
-                self.generator.train()
-            if self.joint_module is not None:
-                self.joint_module.train()
-        return output
+        with self._evaluation_mode():
+            return self._generate(batch.to(self.fabric.device, non_blocking=True))
 
     def fit(
         self,

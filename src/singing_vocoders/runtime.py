@@ -17,6 +17,7 @@ from singing_vocoders.checkpoint import (
     export_diffsinger,
     inspect_checkpoint,
     load_legacy_weights,
+    preserve_rng_state,
 )
 from singing_vocoders.components import Batch
 from singing_vocoders.config import LoadedConfig
@@ -86,11 +87,16 @@ def _write_resolved_config(path: Path, resolved: dict[str, Any]) -> None:
 
 
 def _setup_loaders(fabric: Fabric, config: RecipeConfig) -> tuple[Any, Any, VocoderLoaders]:
-    loaders = build_dataloaders(config.data, config.augmentation)
+    loaders = build_dataloaders(
+        config.data,
+        config.augmentation,
+        num_replicas=fabric.world_size,
+        rank=fabric.global_rank,
+    )
     configured = fabric.setup_dataloaders(
         loaders.train,
         loaders.valid,
-        use_distributed_sampler=True,
+        use_distributed_sampler=False,
         move_to_device=False,
     )
     if not isinstance(configured, list) or len(configured) != 2:
@@ -184,11 +190,15 @@ def train_worker(
         nonlocal pending_checkpoint
         step = current.state.logical_step
         if step % config.runtime.validate_every == 0:
-            validation = current.validate(valid_loader)
-            current.fabric.log_dict(validation, step=step)
-            _log_validation_audio(
-                current, valid_loader, sample_rate=config.data.features.sample_rate, step=step
-            )
+            with preserve_rng_state():
+                validation = current.validate(valid_loader)
+                current.fabric.log_dict(validation, step=step)
+                _log_validation_audio(
+                    current,
+                    valid_loader,
+                    sample_rate=config.data.features.sample_rate,
+                    step=step,
+                )
         if step % config.runtime.checkpoint_every == 0:
             pending_checkpoint = True
         if pending_checkpoint and current.accumulation_boundary():
@@ -209,7 +219,11 @@ def train_worker(
     final_checkpoint = manager.path_for_step(step) if step in saved_at else None
     fabric.barrier()
     export_path: Path | None = None
-    if fabric.global_rank == 0 and final_checkpoint is not None:
+    if (
+        fabric.global_rank == 0
+        and final_checkpoint is not None
+        and config.model.generator.target == "nsf_hifigan"
+    ):
         export_path, _ = export_diffsinger(final_checkpoint, run_dir / "export" / "model.pt")
     fabric.barrier()
     if fabric.global_rank == 0:

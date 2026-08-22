@@ -123,14 +123,8 @@ def partition_muon_parameters(
     muon_ids: set[int] = set()
     muon_parameters: list[nn.Parameter] = []
     for child in module.modules():
-        for name, parameter in child.named_parameters(recurse=False):
-            if (
-                parameter.requires_grad
-                and parameter.ndim >= 2
-                and name != "weight_g"
-                and not isinstance(child, nn.Embedding)
-                and id(parameter) not in muon_ids
-            ):
+        for parameter in child.parameters(recurse=False):
+            if parameter.requires_grad and parameter.ndim == 2 and id(parameter) not in muon_ids:
                 muon_ids.add(id(parameter))
                 muon_parameters.append(parameter)
     adamw_parameters = [
