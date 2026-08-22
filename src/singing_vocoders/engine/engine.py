@@ -35,12 +35,13 @@ class OptimizerState:
 
 
 class EngineState:
-    __slots__ = ("epoch", "format_version", "logical_step", "optimizers")
+    __slots__ = ("batches_in_epoch", "epoch", "format_version", "logical_step", "optimizers")
 
     def __init__(self) -> None:
         self.format_version = 1
         self.logical_step = 0
         self.epoch = 0
+        self.batches_in_epoch = 0
         self.optimizers: dict[str, OptimizerState] = {}
 
     def state_dict(self) -> dict[str, Any]:
@@ -48,6 +49,7 @@ class EngineState:
             "format_version": self.format_version,
             "logical_step": self.logical_step,
             "epoch": self.epoch,
+            "batches_in_epoch": self.batches_in_epoch,
             "optimizers": {name: asdict(state) for name, state in self.optimizers.items()},
         }
 
@@ -56,6 +58,7 @@ class EngineState:
             raise ValueError(f"unsupported engine state version: {value.get('format_version')}")
         self.logical_step = int(value["logical_step"])
         self.epoch = int(value["epoch"])
+        self.batches_in_epoch = int(value.get("batches_in_epoch", 0))
         restored: dict[str, OptimizerState] = {}
         for name, slot in value["optimizers"].items():
             state = self.optimizers.get(name, OptimizerState())
@@ -387,20 +390,28 @@ class FabricGanEngine:
             sampler = getattr(loader, "sampler", None)
             if sampler is not None and hasattr(sampler, "set_epoch"):
                 sampler.set_epoch(self.state.epoch)
-            progressed = False
-            for batch in loader:
-                progressed = True
+            had_batches = False
+            completed_epoch = True
+            resume_position = self.state.batches_in_epoch
+            for batch_index, batch in enumerate(loader):
+                had_batches = True
+                if batch_index < resume_position:
+                    continue
                 batch = batch.to(self.fabric.device, non_blocking=True)
                 metrics = self.train_step(batch)
+                self.state.batches_in_epoch += 1
                 if self.state.logical_step % log_every == 0:
                     self.fabric.log_dict(metrics, step=self.state.logical_step)
                 if on_step is not None:
                     on_step(self, metrics)
                 if self.state.logical_step >= max_steps:
+                    completed_epoch = False
                     break
-            if not progressed:
+            if not had_batches:
                 raise ValueError("training loader is empty")
-            self.state.epoch += 1
+            if completed_epoch:
+                self.state.epoch += 1
+                self.state.batches_in_epoch = 0
 
     def accumulation_boundary(self) -> bool:
         return all(
