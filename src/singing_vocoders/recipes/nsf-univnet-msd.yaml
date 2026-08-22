@@ -1,9 +1,17 @@
-bases: [nsf-univnet.yaml]
+bases: [_univ.yaml]
 name: nsf-univnet-msd
 model:
+  generator:
+    target: nsf_univnet
   discriminators:
-    mrd:
+    msd:
       target: msd
-      params: {}
+    mpd:
+      target: mpd
+      params:
+        periods: [3, 5, 7, 11, 17, 23, 37]
 objective:
   name: nsf_univnet_msd
+  aux_weight: 2.5
+  feature_weight: 1
+  adversarial_weight: 1

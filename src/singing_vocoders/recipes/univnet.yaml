@@ -1,26 +1,8 @@
-bases: [_common.yaml, _warmup-2e4.yaml]
+bases: [_univ.yaml]
 name: univnet
-data:
-  batch_size: 10
 model:
   generator:
     target: univnet
-    params:
-      sample_rate: 44100
-      num_mels: 128
-      hop_size: 512
-      win_size: 2048
-      use_weight_norm: true
-      upsample_rates: [8, 8, 4]
-      cond_in_channels: 128
-      out_channels: 1
-      cg_channels: 32
-      num_lvc_blocks: 4
-      lvc_kernels: 5
-      lvc_hidden_channels: 96
-      lvc_conv_size: 3
-      dropout: 0
-      upmel: 2
   discriminators:
     mrd:
       target: mrd
@@ -37,7 +19,3 @@ objective:
   aux_weight: 2.5
   feature_weight: 1
   adversarial_weight: 1
-runtime:
-  max_steps: 800000
-  validate_every: 8000
-  checkpoint_every: 8000

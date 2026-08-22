@@ -1,8 +1,19 @@
-bases: [univnet.yaml]
+bases: [_univ.yaml]
 name: nsf-univnet
 model:
   generator:
     target: nsf_univnet
+  discriminators:
+    mrd:
+      target: mrd
+      params:
+        fft_sizes: [1024, 2048, 512]
+        hop_sizes: [120, 240, 50]
+        win_lengths: [600, 1200, 240]
+    mpd:
+      target: univ_mpd
+      params:
+        periods: [3, 5, 7, 11, 17, 23, 37]
 objective:
   name: nsf_univnet
   aux_weight: 2.5
