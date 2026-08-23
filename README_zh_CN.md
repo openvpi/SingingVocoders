@@ -8,77 +8,68 @@ SingingVocoders 是面向歌声音频的神经声码器训练框架。训练运�
 
 先创建不包含 PyTorch 的基础环境：
 
-```powershell
+```bash
 conda env create -f environment.yml
 conda activate singing-vocoders-refactor
 ```
 
 然后在 [PyTorch 官方安装选择器](https://pytorch.org/get-started/locally/) 中选择操作系统、Pip 和所需的 CPU/CUDA/ROCm 构建，复制并执行官网给出的命令，再安装本项目：
 
-```powershell
+```bash
 # 先执行官网生成的 PyTorch 安装命令
 python -m pip install -e ".[dev]"
 python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
 ```
 
-项目声明的兼容范围为 `torch>=2.11,<3`，不锁定具体 PyTorch patch/minor 版本，也不依赖未使用的 Torchaudio。PyTorch 2.11 起，PyPI 上 x86_64 的默认 `pip install torch` wheel 已改为 CUDA 13，但 CPU、其他 CUDA 版本和 ROCm 仍使用不同构件；因此不要依赖裸命令的隐含平台选择。
-
-如需精确复现本仓库的 Windows 验收环境，可使用固定为 PyTorch 2.11.0 CUDA 13.0 的参考锁：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\create_env.ps1
-conda activate singing-vocoders-refactor
-```
-
-该脚本发现同名环境时会停止，不会修改或删除已有环境；仅在 Conda 已成功创建新环境、而后续 Python 安装失败时清理该新环境。`conda-win-64.lock` 和 `pylock.win-64.toml` 是验收快照，不是项目支持版本上限。安装后只会注册一个命令：`vocoder`。
+项目声明的兼容范围为 `torch>=2.11,<3`，不锁定具体 PyTorch patch/minor 版本，也不依赖未使用的 Torchaudio。PyTorch 2.11 起，PyPI 上 x86_64 的默认 `pip install torch` wheel 已改为 CUDA 13，但 CPU、其他 CUDA 版本和 ROCm 仍使用不同构件；因此不要依赖裸命令的隐含平台选择。安装后只会注册一个命令：`vocoder`。
 
 ## 快速开始
 
 查看并验证内置 recipe：
 
-```powershell
+```bash
 vocoder recipes list
 vocoder config validate pc-nsf-hifigan
 ```
 
 预处理 WAV 数据：
 
-```powershell
-vocoder preprocess pc-nsf-hifigan `
-  --source D:\path\to\wavs `
-  --output data\my-dataset
+```bash
+vocoder preprocess pc-nsf-hifigan \
+  --source /path/to/wavs \
+  --output data/my-dataset
 ```
 
 预处理通过同级 staging 目录事务发布。已有输出只有在完整通过当前数据格式校验时才能被替换；普通目录、残缺数据集、符号链接和 junction 都会被拒绝。
 
 训练配置可以用重复的 `--set key=value` 覆盖。每次训练都创建全新的运行目录，不覆盖已有结果：
 
-```powershell
-vocoder train pc-nsf-hifigan `
-  --set data.processed_dir=data/my-dataset `
+```bash
+vocoder train pc-nsf-hifigan \
+  --set data.processed_dir=data/my-dataset \
   --set runtime.precision=bf16-mixed
 ```
 
 精确恢复新格式 checkpoint：
 
-```powershell
-vocoder train pc-nsf-hifigan --resume experiments\run\step-00000500.ckpt
+```bash
+vocoder train pc-nsf-hifigan --resume experiments/run/step-00000500.ckpt
 ```
 
 严格导入旧 Lightning 或生成器权重时使用 warm-start；旧 optimizer、scaler 和 step 不会被猜测或恢复：
 
-```powershell
-vocoder train pc-nsf-hifigan `
-  --warm-start pretrained\model.ckpt `
+```bash
+vocoder train pc-nsf-hifigan \
+  --warm-start pretrained/model.ckpt \
   --warm-start-scope all
 ```
 
 验证、审计和导出：
 
-```powershell
-vocoder validate pc-nsf-hifigan experiments\run\step-00001000.ckpt
-vocoder checkpoint inspect experiments\run\step-00001000.ckpt
-vocoder export experiments\run\step-00001000.ckpt exports\model.pt
+```bash
+vocoder validate pc-nsf-hifigan experiments/run/step-00001000.ckpt
+vocoder checkpoint inspect experiments/run/step-00001000.ckpt
+vocoder export experiments/run/step-00001000.ckpt exports/model.pt
 ```
 
 新格式 checkpoint 始终使用其内嵌配置导出。旧 checkpoint 需要额外传入 `--recipe pc-nsf-hifigan`。导出结果为 DiffSinger 使用的 `{"generator": state_dict}` checkpoint，以及同目录的 `config.json`。
@@ -112,7 +103,7 @@ vocoder export experiments\run\step-00001000.ckpt exports\model.pt
 
 ## 开发检查
 
-```powershell
+```bash
 ruff check .
 ruff format --check .
 mypy
@@ -120,4 +111,4 @@ pytest
 pip check
 ```
 
-DDP 由 Fabric 引擎支持，并在 Windows 上以两进程 CPU/Gloo 回归测试覆盖同步、累积、计数器、单 rank checkpoint 写入与恢复。多卡 GPU 验收应在独立环境执行。
+DDP 由 Fabric 引擎支持。分布式回归测试覆盖同步、累积、计数器、单 rank checkpoint 写入与恢复；多卡 GPU 验收应在独立环境执行。

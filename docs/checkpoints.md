@@ -17,9 +17,9 @@ Writes use a temporary sibling file and an atomic replace. Only rank zero commit
 
 Exact resume permits changes only to `runtime.max_steps`, `runtime.log_every`, and `runtime.validate_every`. Model, data, augmentation, optimization, precision, checkpoint cadence, and dataset fingerprint must match. The engine resumes at the next unconsumed batch in the same epoch.
 
-```powershell
-vocoder train pc-nsf-hifigan `
-  --resume experiments\pc-nsf-hifigan\run-id\step-00000500.ckpt `
+```bash
+vocoder train pc-nsf-hifigan \
+  --resume experiments/pc-nsf-hifigan/run-id/step-00000500.ckpt \
   --set runtime.max_steps=1000
 ```
 
@@ -34,9 +34,9 @@ The importer recognizes:
 
 All selected names and shapes are compared before `load_state_dict`. Import never mutates the source checkpoint and never restores legacy optimizer, scaler, or global-step state.
 
-```powershell
-vocoder train pc-nsf-hifigan `
-  --warm-start pretrained\pc_nsf_hifigan.ckpt `
+```bash
+vocoder train pc-nsf-hifigan \
+  --warm-start pretrained/pc_nsf_hifigan.ckpt \
   --warm-start-scope generator
 ```
 
@@ -44,10 +44,10 @@ Use `--warm-start-scope all` only when the legacy checkpoint contains a generato
 
 ## Inspection and export
 
-```powershell
-vocoder checkpoint inspect path\to\checkpoint.ckpt
-vocoder export path\to\checkpoint.ckpt exports\model.pt
-vocoder export path\to\legacy.ckpt exports\legacy-model.pt --recipe pc-nsf-hifigan
+```bash
+vocoder checkpoint inspect path/to/checkpoint.ckpt
+vocoder export path/to/checkpoint.ckpt exports/model.pt
+vocoder export path/to/legacy.ckpt exports/legacy-model.pt --recipe pc-nsf-hifigan
 ```
 
 Inspection uses metadata tensors and reports byte size, container kind, format version, key count, state tensor element count, dtypes, and a deterministic schema hash.

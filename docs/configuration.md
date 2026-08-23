@@ -10,9 +10,9 @@ Each YAML file may declare a `bases` list. Base paths are resolved relative to t
 
 OmegaConf performs composition and interpolation resolution. Pydantic then validates the fully resolved object with unknown outer fields forbidden. Inheritance cycles and unresolved interpolation fail before any model or dataset is created.
 
-```powershell
-vocoder config validate nsf-hifigan `
-  --set data.batch_size=2 `
+```bash
+vocoder config validate nsf-hifigan \
+  --set data.batch_size=2 \
   --set runtime.precision=bf16-mixed
 ```
 
