@@ -6,9 +6,10 @@ from typing import Any, overload
 
 import torch
 from torch import Tensor, nn
+from torch.nn import functional as F
 from torch.optim import Optimizer
 
-_COEFFICIENTS = [
+COEFFICIENTS = [
     (8.28721201814563, -23.595886519098837, 17.300387312530933),
     (4.107059111542203, -2.9478499167379106, 0.5448431082926601),
     (3.9486908534822946, -2.908902115962949, 0.5518191394370137),
@@ -18,19 +19,26 @@ _COEFFICIENTS = [
     (1.8750014808534479, -1.2500016453999487, 0.3750001645474248),
     (1.875, -1.25, 0.375),
 ]
-_COEFFICIENTS = [(a / 1.01, b / 1.01**3, c / 1.01**5) for a, b, c in _COEFFICIENTS[:-1]] + [
-    _COEFFICIENTS[-1]
+COEFFICIENTS = [(a / 1.01, b / 1.01**3, c / 1.01**5) for a, b, c in COEFFICIENTS[:-1]] + [
+    COEFFICIENTS[-1]
 ]
 
 
-def _orthogonalize(gradient: Tensor, steps: int, use_bfloat16: bool) -> Tensor:
+def get_bf16_support_map() -> dict[torch.device, bool]:
+    if not torch.cuda.is_available():
+        return {}
+    return {
+        device: torch.cuda.get_device_capability(device)[0] >= 8
+        for device in (torch.device(f"cuda:{index}") for index in range(torch.cuda.device_count()))
+    }
+
+
+def zeropower_via_newtonschulz5(gradient: Tensor, steps: int, use_bf16: bool) -> Tensor:
     if gradient.ndim != 3:
         raise ValueError("Muon expects a batch of matrices")
-    value = gradient.to(dtype=torch.bfloat16 if use_bfloat16 else torch.float32)
-    value = value / torch.linalg.vector_norm(value, dim=(-2, -1), keepdim=True).clamp_min(1e-7)
-    coefficients = _COEFFICIENTS[:steps] + list(
-        repeat(_COEFFICIENTS[-1], max(0, steps - len(_COEFFICIENTS)))
-    )
+    value = gradient.to(dtype=torch.bfloat16 if use_bf16 else torch.float32)
+    value = F.normalize(value, p=2.0, dim=(-2, -1), eps=1e-7)  # type: ignore[arg-type]
+    coefficients = COEFFICIENTS[:steps] + list(repeat(COEFFICIENTS[-1], steps - len(COEFFICIENTS)))
     if value.size(-2) < value.size(-1):
         for a, b, c in coefficients:
             product = torch.bmm(value, value.mT)
@@ -65,6 +73,7 @@ class Muon(Optimizer):
                 "ns_steps": ns_steps,
             },
         )
+        self.bf16_support_map = get_bf16_support_map()
 
     @overload
     def step(self, closure: None = None) -> None: ...
@@ -103,10 +112,12 @@ class Muon(Optimizer):
                 original_shape = stacked.shape
                 if stacked.ndim >= 4:
                     stacked = stacked.view(stacked.size(0), stacked.size(1), -1)
-                use_bfloat16 = (
-                    stacked.is_cuda and torch.cuda.get_device_capability(stacked.device)[0] >= 8
+                use_bfloat16 = self.bf16_support_map.get(stacked.device, False)
+                update = zeropower_via_newtonschulz5(
+                    stacked,
+                    steps=group["ns_steps"],
+                    use_bf16=use_bfloat16,
                 )
-                update = _orthogonalize(stacked, group["ns_steps"], use_bfloat16)
                 if group["weight_decay"]:
                     torch._foreach_mul_(parameters, 1 - group["lr"] * group["weight_decay"])
                 torch._foreach_add_(
@@ -117,16 +128,24 @@ class Muon(Optimizer):
         return loss
 
 
+def get_params_for_muon(module: nn.Module) -> list[nn.Parameter]:
+    muon_parameters = []
+    for child in module.modules():
+        for name, parameter in child.named_parameters(recurse=False):
+            if not parameter.requires_grad:
+                continue
+            if name == "weight_g":
+                continue
+            if not isinstance(child, nn.Embedding) and parameter.ndim >= 2:
+                muon_parameters.append(parameter)
+    return muon_parameters
+
+
 def partition_muon_parameters(
     module: nn.Module,
 ) -> tuple[list[nn.Parameter], list[nn.Parameter]]:
-    muon_ids: set[int] = set()
-    muon_parameters: list[nn.Parameter] = []
-    for child in module.modules():
-        for parameter in child.parameters(recurse=False):
-            if parameter.requires_grad and parameter.ndim == 2 and id(parameter) not in muon_ids:
-                muon_ids.add(id(parameter))
-                muon_parameters.append(parameter)
+    muon_parameters = get_params_for_muon(module)
+    muon_ids = {id(parameter) for parameter in muon_parameters}
     adamw_parameters = [
         parameter
         for parameter in module.parameters()

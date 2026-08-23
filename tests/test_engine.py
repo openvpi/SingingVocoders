@@ -19,7 +19,7 @@ from singing_vocoders.components import (
 )
 from singing_vocoders.config.schema import RecipeConfig
 from singing_vocoders.engine import FabricGanEngine
-from singing_vocoders.engine.muon import MuonAdamW
+from singing_vocoders.engine.muon import MuonAdamW, zeropower_via_newtonschulz5
 from singing_vocoders.task import VocoderTask
 from singing_vocoders.task.objective import LossResult
 
@@ -650,6 +650,28 @@ class PartitionModel(nn.Module):
         self.weight_g = nn.Parameter(torch.ones(2, 1))
 
 
+def test_muon_newton_schulz_matches_original_implementation() -> None:
+    gradient = torch.linspace(-1.2, 1.1, 24, dtype=torch.float32).reshape(2, 3, 4)
+    expected = torch.tensor(
+        [
+            [
+                [-0.27305967, -0.37734002, -0.48162293, -0.58590508],
+                [-0.43917429, -0.30468976, -0.17020288, -0.03571662],
+                [-0.60528910, -0.23203433, 0.14121898, 0.51447272],
+            ],
+            [
+                [-0.53277284, -0.16539623, 0.20199838, 0.56936491],
+                [0.02248549, 0.17281860, 0.32311583, 0.47346985],
+                [0.57774395, 0.51100886, 0.44429266, 0.37754762],
+            ],
+        ]
+    )
+
+    actual = zeropower_via_newtonschulz5(gradient, steps=5, use_bf16=False)
+
+    torch.testing.assert_close(actual, expected, atol=1e-7, rtol=1e-6)
+
+
 def test_muon_adamw_partition_and_state_roundtrip() -> None:
     model = PartitionModel()
     optimizer = MuonAdamW(
@@ -667,9 +689,9 @@ def test_muon_adamw_partition_and_state_roundtrip() -> None:
     muon_ids = {id(parameter) for parameter in optimizer.muon_parameters}
     adamw_ids = {id(parameter) for parameter in optimizer.adamw_parameters}
     assert id(model.linear.weight) in muon_ids
-    assert id(model.embedding.weight) in muon_ids
-    assert id(model.weight_g) in muon_ids
-    assert id(model.conv.weight) in adamw_ids
+    assert id(model.conv.weight) in muon_ids
+    assert id(model.embedding.weight) in adamw_ids
+    assert id(model.weight_g) in adamw_ids
     assert not muon_ids & adamw_ids
     assert muon_ids | adamw_ids == {id(parameter) for parameter in model.parameters()}
     for parameter in model.parameters():
