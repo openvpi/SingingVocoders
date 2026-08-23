@@ -1,5 +1,6 @@
 lock-version = "1.0"
 created-by = "pip"
+# Exact Windows acceptance snapshot, not the project compatibility constraint.
 
 [[packages]]
 name = "absl-py"

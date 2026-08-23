@@ -1,3 +1,4 @@
+# Exact Windows acceptance snapshot; general installations select PyTorch separately.
 --extra-index-url https://download.pytorch.org/whl/cu130
 
 click==8.4.2

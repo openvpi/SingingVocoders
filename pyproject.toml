@@ -24,8 +24,7 @@ dependencies = [
   "setuptools==80.9.0",
   "soundfile==0.14.0",
   "tensorboard==2.21.0",
-  "torch==2.11.0",
-  "torchaudio==2.11.0",
+  "torch>=2.11,<3",
 ]
 
 [project.optional-dependencies]
@@ -49,7 +48,7 @@ license-files = ["LICENSE", "LICENSES/*.txt", "THIRD_PARTY_NOTICES.md"]
 where = ["src"]
 
 [tool.setuptools.package-data]
-singing_vocoders = ["py.typed", "recipes/*.yaml"]
+singing_vocoders = ["py.typed", "recipes/*.yaml", "recipes/historical/*.yaml"]
 
 [tool.pytest.ini_options]
 addopts = "-ra --strict-config --strict-markers"
