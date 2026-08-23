@@ -41,7 +41,7 @@ def test_project_uses_a_torch_compatibility_range_and_packages_historical_recipe
     with (project_root / "pyproject.toml").open("rb") as stream:
         project = tomllib.load(stream)
     dependencies = project["project"]["dependencies"]
-    assert "torch>=2.11,<3" in dependencies
+    assert "torch>=2.4,<3" in dependencies
     assert not any(value.startswith("torch==") for value in dependencies)
     assert not any(value.lower().startswith("torchaudio") for value in dependencies)
     assert "historical/base-hifi" in list_recipes()

@@ -21,7 +21,7 @@ python -m pip install -e ".[dev]"
 python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
 ```
 
-项目声明的兼容范围为 `torch>=2.11,<3`，不锁定具体 PyTorch patch/minor 版本，也不依赖未使用的 Torchaudio。PyTorch 2.11 起，PyPI 上 x86_64 的默认 `pip install torch` wheel 已改为 CUDA 13，但 CPU、其他 CUDA 版本和 ROCm 仍使用不同构件；因此不要依赖裸命令的隐含平台选择。安装后只会注册一个命令：`vocoder`。
+项目声明的兼容范围为 `torch>=2.4,<3`，不锁定具体 PyTorch patch/minor 版本，也不依赖未使用的 Torchaudio。PyTorch 分别发布 CPU、CUDA 和 ROCm 构件，而 PyPI 默认 wheel 的策略也会随版本变化；请始终使用官方选择器，不要依赖裸命令隐式选择构件。安装后只会注册一个命令：`vocoder`。
 
 ## 快速开始
 

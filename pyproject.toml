@@ -24,7 +24,7 @@ dependencies = [
   "setuptools==80.9.0",
   "soundfile==0.14.0",
   "tensorboard==2.21.0",
-  "torch>=2.11,<3",
+  "torch>=2.4,<3",
 ]
 
 [project.optional-dependencies]

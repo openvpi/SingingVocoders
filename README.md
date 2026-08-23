@@ -21,7 +21,7 @@ python -m pip install -e ".[dev]"
 python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
 ```
 
-The project declares `torch>=2.11,<3` instead of pinning a PyTorch minor or patch release, and it does not depend on the unused Torchaudio package. Starting with PyTorch 2.11, the default x86_64 wheel served by `pip install torch` from PyPI uses CUDA 13. CPU, alternative CUDA, and ROCm builds still use different artifacts, so do not rely on the bare command's implicit platform selection. The package installs exactly one command: `vocoder`.
+The project declares `torch>=2.4,<3` instead of pinning a PyTorch minor or patch release, and it does not depend on the unused Torchaudio package. PyTorch publishes separate CPU, CUDA, and ROCm artifacts, while the default PyPI wheel policy has changed across releases. Always use the official selector instead of relying on the bare command's implicit artifact choice. The package installs exactly one command: `vocoder`.
 
 ## Quick start
 
