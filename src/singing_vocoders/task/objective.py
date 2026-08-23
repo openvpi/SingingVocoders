@@ -118,6 +118,7 @@ class RandomScaleSpectralLoss(nn.Module):
             generated = functional.pad(generated, (0, padding))
             target = functional.pad(target, (0, padding))
         window = torch.hann_window(fft_size, device=generated.device, dtype=generated.dtype)
+        window_norm = torch.linalg.vector_norm(window)
         generated_spectrum = (
             torch.stft(
                 generated,
@@ -126,11 +127,11 @@ class RandomScaleSpectralLoss(nn.Module):
                 win_length=fft_size,
                 window=window,
                 center=False,
-                normalized=True,
+                normalized=False,
                 return_complex=True,
-            )
-            .abs()
-            .clamp_min_(1e-7)
+            ).abs()
+            / window_norm
+            + 1e-7
         )
         target_spectrum = (
             torch.stft(
@@ -140,11 +141,12 @@ class RandomScaleSpectralLoss(nn.Module):
                 win_length=fft_size,
                 window=window,
                 center=False,
-                normalized=True,
+                normalized=False,
                 return_complex=True,
             )
             .abs()
-            .clamp_min_(1e-7)
+            .div(window_norm)
+            .add(1e-7)
         )
         convergence = torch.mean(
             torch.linalg.vector_norm(target_spectrum - generated_spectrum, dim=(-2, -1))
@@ -269,9 +271,7 @@ class VocoderObjective(nn.Module):
         length = min(signal.shape[-1], harmonic.shape[-1], uv_mask.shape[-1])
         uv = torch.mean(
             torch.linalg.vector_norm(harmonic[..., :length] * uv_mask[..., :length], dim=1)
-            / torch.linalg.vector_norm(
-                signal[..., :length] * uv_mask[..., :length], dim=1
-            ).clamp_min(1e-5)
+            / (torch.linalg.vector_norm(signal[..., :length] * uv_mask[..., :length], dim=1) + 1e-5)
         )
         optimized_uv = uv
         if logical_step < config.uv_detach_steps or uv.detach() < config.uv_tolerance:

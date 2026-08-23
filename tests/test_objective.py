@@ -13,7 +13,79 @@ from singing_vocoders.config.schema import (
 )
 from singing_vocoders.modules.features import LogMelSpectrogram
 from singing_vocoders.task.augmentation import GeneratorStage
-from singing_vocoders.task.objective import VocoderObjective
+from singing_vocoders.task.objective import RandomScaleSpectralLoss, STFTLoss, VocoderObjective
+
+
+def test_stft_loss_preserves_original_spectral_formulas() -> None:
+    torch.manual_seed(1234)
+    generated = torch.randn(2, 256)
+    target = torch.randn(2, 256)
+    fft_size = 64
+    hop_size = 16
+    win_length = 48
+    window = torch.hann_window(win_length)
+
+    def magnitude(audio: torch.Tensor) -> torch.Tensor:
+        return (
+            torch.stft(
+                audio,
+                fft_size,
+                hop_size,
+                win_length,
+                window,
+                return_complex=True,
+            )
+            .abs()
+            .clamp_min(10 ** (-3.5))
+            .transpose(2, 1)
+        )
+
+    generated_magnitude = magnitude(generated)
+    target_magnitude = magnitude(target)
+    expected_convergence = torch.norm(target_magnitude - generated_magnitude, p="fro") / torch.norm(
+        target_magnitude, p="fro"
+    )
+    expected_magnitude = torch.nn.functional.l1_loss(
+        target_magnitude.log(), generated_magnitude.log()
+    )
+
+    convergence, magnitude_loss = STFTLoss(fft_size, hop_size, win_length)(generated, target)
+    torch.testing.assert_close(convergence, expected_convergence, atol=0, rtol=0)
+    torch.testing.assert_close(magnitude_loss, expected_magnitude, atol=0, rtol=0)
+
+
+def test_random_scale_spectral_loss_preserves_original_epsilon_and_normalization() -> None:
+    torch.manual_seed(4321)
+    generated = torch.randn(2, 256)
+    target = torch.randn(2, 256)
+    fft_size = 32
+    window = torch.hann_window(fft_size)
+
+    def spectrum(audio: torch.Tensor) -> torch.Tensor:
+        return (
+            torch.stft(
+                audio,
+                fft_size,
+                hop_length=fft_size,
+                win_length=fft_size,
+                window=window,
+                center=False,
+                normalized=False,
+                return_complex=True,
+            ).abs()
+            / torch.linalg.vector_norm(window)
+            + 1e-7
+        )
+
+    generated_spectrum = spectrum(generated)
+    target_spectrum = spectrum(target)
+    expected = torch.mean(
+        torch.linalg.vector_norm(target_spectrum - generated_spectrum, dim=(-2, -1))
+        / torch.linalg.vector_norm(target_spectrum + generated_spectrum, dim=(-2, -1))
+    ) + torch.nn.functional.l1_loss(target_spectrum.log(), generated_spectrum.log())
+
+    actual = RandomScaleSpectralLoss._single_scale(generated, target, fft_size)
+    torch.testing.assert_close(actual, expected, atol=0, rtol=0)
 
 
 def test_gan_losses_are_finite() -> None:
@@ -169,6 +241,63 @@ def test_ddsp_hybrid_uses_uv_and_random_scale_spectral_losses() -> None:
     result.loss.backward()
     assert torch.isfinite(result.loss)
     assert torch.isfinite(generated_audio.grad).all()
+
+
+def test_ddsp_uv_loss_preserves_original_additive_epsilon() -> None:
+    features = FeatureConfig(
+        sample_rate=8_000,
+        num_mels=4,
+        hop_size=4,
+        n_fft=16,
+        win_size=16,
+        fmax=3_900,
+    )
+    objective = VocoderObjective(
+        DDSPObjectiveConfig.model_validate(
+            {
+                "name": "ddsp_univnet",
+                "aux_weight": 0,
+                "ddsp_weight": 1,
+                "rss_fft_min": 8,
+                "rss_fft_max": 16,
+                "rss_scales": 1,
+                "uv_weight": 1,
+                "uv_detach_steps": 0,
+                "uv_tolerance": 0,
+            }
+        ),
+        features,
+    )
+
+    class ZeroSpectralLoss(RandomScaleSpectralLoss):
+        def __init__(self) -> None:
+            super().__init__(8, 9, 1)
+
+        def forward(self, generated: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+            return generated.new_zeros(())
+
+    objective.rss = ZeroSpectralLoss()
+    signal = torch.full((2, 1, 32), 2.0)
+    harmonic = torch.ones(2, 32)
+    batch = Batch(
+        audio=torch.zeros_like(signal),
+        mel=torch.zeros(2, 4, 8),
+        f0=torch.ones(2, 8),
+        uv=torch.ones(2, 8, dtype=torch.bool),
+        pe=torch.zeros(2, dtype=torch.long),
+    )
+    generated = GeneratorOutput(
+        signal,
+        {"ddsp_audio": signal, "harmonic": harmonic},
+    )
+
+    loss, metrics = objective._ddsp_hybrid_loss(batch, generated, logical_step=0)
+    expected = torch.mean(
+        torch.linalg.vector_norm(harmonic, dim=1)
+        / (torch.linalg.vector_norm(signal.squeeze(1), dim=1) + 1e-5)
+    )
+    torch.testing.assert_close(metrics["loss/aux/ddsp_uv"], expected, atol=0, rtol=0)
+    torch.testing.assert_close(loss, expected, atol=0, rtol=0)
 
 
 class MelConditionedGenerator(nn.Module):
