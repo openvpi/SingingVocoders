@@ -12,16 +12,16 @@ model:
     mrd:
       target: fast_mrd
       params:
-        initial_channels: 8
+        init_channel: 8
         strides: [4, 2, 2]
         fft_sizes: [512, 1024, 2048]
         hop_sizes: [64, 128, 256]
-        window_lengths: [512, 1024, 2048]
+        win_lengths: [512, 1024, 2048]
     mpd:
       target: fast_mpd
       params:
         periods: [2, 3, 5, 7, 11]
-        initial_channels: 8
+        init_channel: 8
         strides: [4, 4, 4]
         kernel_size: 11
 objective:

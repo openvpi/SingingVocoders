@@ -81,16 +81,16 @@ def test_hifigan_discriminator_state_keys_remain_legacy_compatible() -> None:
         (
             "fast_mrd",
             {
-                "initial_channels": 4,
+                "init_channel": 4,
                 "strides": [2, 2],
                 "fft_sizes": [512],
                 "hop_sizes": [128],
-                "window_lengths": [512],
+                "win_lengths": [512],
             },
         ),
         (
             "fast_mpd",
-            {"periods": [2, 3], "initial_channels": 4, "strides": [2, 2], "kernel_size": 7},
+            {"periods": [2, 3], "init_channel": 4, "strides": [2, 2], "kernel_size": 7},
         ),
     ),
 )
@@ -127,7 +127,7 @@ def test_builtin_components_reject_unknown_parameters() -> None:
         ("mrd", {"fft_sizes": [], "hop_sizes": [], "window_lengths": []}, "resolution"),
         (
             "fast_mrd",
-            {"fft_sizes": [128], "hop_sizes": [32], "window_lengths": [256]},
+            {"fft_sizes": [128], "hop_sizes": [32], "win_lengths": [256]},
             "must not exceed",
         ),
     ),

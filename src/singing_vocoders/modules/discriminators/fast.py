@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from math import prod
-from typing import cast
+from typing import Any, cast
 
 import torch
-import torch.nn.functional as F
 from torch import Tensor, nn
+from torch.nn import functional as F
 
 from singing_vocoders.components.contracts import (
     DiscriminatorComponent,
@@ -19,283 +19,345 @@ from singing_vocoders.modules.discriminators.common import (
 )
 
 
-class TransposeDimensions(nn.Module):
-    def __init__(self, first: int, second: int) -> None:
+def _positive_integer(value: int, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ValueError(f"{name} must be a positive integer")
+    return value
+
+
+class Transpose(nn.Module):
+    def __init__(self, dims: Sequence[int]) -> None:
         super().__init__()
-        self.first = first
-        self.second = second
+        if len(dims) != 2:
+            raise ValueError("dims must contain exactly two dimensions")
+        self.dims = tuple(dims)
 
-    def forward(self, inputs: Tensor) -> Tensor:
-        return inputs.transpose(self.first, self.second)
+    def forward(self, x: Tensor) -> Tensor:
+        return x.transpose(*self.dims)
 
 
-class PermuteDimensions(nn.Module):
-    def __init__(self, dimensions: Sequence[int]) -> None:
+class Permute(nn.Module):
+    def __init__(self, dims: Sequence[int]) -> None:
         super().__init__()
-        self.dimensions = tuple(dimensions)
+        self.dims = tuple(dims)
 
-    def forward(self, inputs: Tensor) -> Tensor:
-        return inputs.permute(*self.dimensions)
+    def forward(self, x: Tensor) -> Tensor:
+        return x.permute(*self.dims)
 
 
-class SoftSignGatedLinearUnit(nn.Module):
-    def __init__(self, dimension: int = -1) -> None:
+class SoftSignGLUFunction(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx: Any, out: Tensor, gate: Tensor) -> Tensor:
+        denom_out = out.abs().add(1.0)
+        denom_gate = gate.abs().add(1.0)
+        out = out / denom_out
+        gate = gate / denom_gate
+        ctx.save_for_backward(
+            out / denom_gate / denom_gate,
+            gate / denom_out / denom_out,
+        )
+        return out * gate
+
+    @staticmethod
+    def backward(ctx: Any, grad_output: Tensor) -> tuple[Tensor, Tensor]:
+        out_d_gate, gate_d_out = ctx.saved_tensors
+        return grad_output * gate_d_out, grad_output * out_d_gate
+
+
+class SoftSignGLU(nn.Module):
+    def __init__(self, dim: int = -1) -> None:
         super().__init__()
-        self.dimension = dimension
+        self.dim = dim
 
-    def forward(self, inputs: Tensor) -> Tensor:
-        values, gates = inputs.chunk(2, dim=self.dimension)
-        return values / values.abs().add(1.0) * (gates / gates.abs().add(1.0))
+    def forward(self, x: Tensor) -> Tensor:
+        out, gate = torch.split(x, x.size(self.dim) // 2, dim=self.dim)
+        return cast(Tensor, SoftSignGLUFunction.apply(out, gate))  # type: ignore[no-untyped-call]
 
 
-class LynxResidualBlock(nn.Module):
-    def __init__(self, channels: int, kernel_size: int = 11, depthwise: bool = True) -> None:
+class LYNXNet2Block(nn.Module):
+    def __init__(self, dim: int, kernel_size: int = 11, use_dwconv: bool = True) -> None:
         super().__init__()
-        self.layers = nn.Sequential(
-            TransposeDimensions(1, 2),
+        self.net = nn.Sequential(
+            Transpose((1, 2)),
             nn.Conv1d(
-                channels,
-                channels,
+                dim,
+                dim,
                 kernel_size=kernel_size,
                 padding=kernel_size // 2,
-                groups=channels if depthwise else 1,
+                groups=dim if use_dwconv else 1,
             ),
-            TransposeDimensions(1, 2),
-            nn.Linear(channels, channels * 2),
-            SoftSignGatedLinearUnit(),
-            nn.Linear(channels, channels * 2),
-            SoftSignGatedLinearUnit(),
-            nn.Linear(channels, channels),
+            Transpose((1, 2)),
+            nn.Linear(dim, dim * 2),
+            SoftSignGLU(),
+            nn.Linear(dim, dim * 2),
+            SoftSignGLU(),
+            nn.Linear(dim, dim),
         )
 
-    def forward(self, inputs: Tensor, normalized_inputs: Tensor | None = None) -> Tensor:
-        if normalized_inputs is None:
-            normalized_inputs = F.rms_norm(inputs, (inputs.size(-1),))
-        return inputs + cast(Tensor, self.layers(normalized_inputs))
+    def forward(self, x: Tensor, norm_x: Tensor | None = None) -> Tensor:
+        if norm_x is None:
+            norm_x = F.rms_norm(x, (x.size(-1),))
+        return x + cast(Tensor, self.net(norm_x))
 
 
-class FastPeriodDiscriminator(nn.Module):
+class FastPD(nn.Module):
     def __init__(
         self,
         period: int,
-        initial_channels: int = 8,
+        init_channel: int = 8,
         strides: Sequence[int] = (4, 4, 4),
         kernel_size: int = 11,
     ) -> None:
         super().__init__()
-        if period <= 0:
-            raise ValueError("period must be positive")
-        if initial_channels <= 0:
-            raise ValueError("initial_channels must be positive")
-        if kernel_size <= 0 or kernel_size % 2 == 0:
-            raise ValueError("kernel_size must be a positive odd integer")
-        self.period = period
-        self.strides = tuple(strides)
-        if not self.strides or any(stride < 1 for stride in self.strides):
-            raise ValueError("strides must contain positive integers")
-        self.hop_length = period * prod(self.strides)
-        self.input_projection = nn.Linear(self.strides[0], initial_channels * self.strides[0])
-        self.residual_blocks = nn.ModuleList(
+        self.period = _positive_integer(period, "period")
+        init_channel = _positive_integer(init_channel, "init_channel")
+        kernel_size = _positive_integer(kernel_size, "kernel_size")
+        if kernel_size % 2 == 0:
+            raise ValueError("kernel_size must be odd")
+        self.strides = tuple(_positive_integer(stride, "stride") for stride in strides)
+        if not self.strides:
+            raise ValueError("strides must not be empty")
+        self.hop_length = self.period * prod(self.strides)
+        self.pre = nn.Linear(self.strides[0], init_channel * self.strides[0])
+        self.residual_layers = nn.ModuleList(
             [
-                LynxResidualBlock(
-                    channels=initial_channels * prod(self.strides[: index + 1]),
+                LYNXNet2Block(
+                    dim=init_channel * prod(self.strides[: index + 1]),
                     kernel_size=kernel_size,
-                    depthwise=index > 0,
+                    use_dwconv=index > 0,
                 )
                 for index in range(len(self.strides))
             ]
         )
-        self.output_projection = nn.Linear(initial_channels * prod(self.strides), 1)
+        self.post = nn.Linear(init_channel * prod(self.strides), 1)
 
-    def forward(self, audio: Tensor) -> tuple[Tensor, list[Tensor]]:
-        batch_size, _, samples = audio.shape
+    def forward(
+        self,
+        x: Tensor,
+        infer_last_layer: bool = True,
+    ) -> tuple[Tensor, list[Tensor]]:
+        feature_maps: list[Tensor] = []
+        batch, _, samples = x.shape
         usable_samples = samples // self.hop_length * self.hop_length
         if usable_samples == 0:
             raise ValueError(
                 f"audio requires at least {self.hop_length} samples, received {samples}"
             )
-        hidden = audio[..., :usable_samples].reshape(batch_size, -1, self.period)
-        hidden = hidden.transpose(1, 2).reshape(batch_size * self.period, -1, self.strides[0])
-        hidden = F.gelu(self.input_projection(hidden))
-
-        feature_maps: list[Tensor] = []
-        for index, block in enumerate(self.residual_blocks):
+        x = x[:, :, :usable_samples].view(batch, -1, self.period)
+        x = x.transpose(1, 2).reshape(batch * self.period, -1, self.strides[0])
+        x = F.gelu(self.pre(x))
+        for index, layer in enumerate(self.residual_layers):
             if index > 0 and self.strides[index] > 1:
-                hidden = hidden.reshape(
-                    batch_size * self.period,
-                    -1,
-                    hidden.size(2) * self.strides[index],
-                )
-            normalized = F.rms_norm(hidden, (hidden.size(-1),))
+                x = x.view(batch * self.period, -1, x.size(2) * self.strides[index])
+            norm_x = F.rms_norm(x, (x.size(-1),))
             if index > 0:
-                feature_maps.append(normalized.reshape(batch_size, -1))
-            hidden = block(hidden, normalized)
+                feature_maps.append(norm_x.view(batch, -1))
+            if not infer_last_layer and index == len(self.residual_layers) - 1:
+                return norm_x, feature_maps
+            x = layer(x, norm_x)
+        x = F.rms_norm(x, (x.size(-1),))
+        return self.post(x).view(batch, -1), feature_maps
 
-        hidden = F.rms_norm(hidden, (hidden.size(-1),))
-        scores = self.output_projection(hidden).reshape(batch_size, -1)
-        return scores, feature_maps
 
-
-class FastMultiPeriodDiscriminator(DiscriminatorComponent):
+class FastMPD(nn.Module):
     def __init__(
         self,
-        periods: Sequence[int] = (2, 3, 5, 7, 11),
-        initial_channels: int = 8,
+        periods: Sequence[int] | None = None,
+        init_channel: int = 8,
         strides: Sequence[int] = (4, 4, 4),
         kernel_size: int = 11,
     ) -> None:
         super().__init__()
-        period_values = tuple(periods)
-        if not period_values or any(period <= 0 for period in period_values):
-            raise ValueError("periods must contain positive integers")
+        self.periods = tuple((2, 3, 5, 7, 11) if periods is None else periods)
+        if not self.periods:
+            raise ValueError("periods must not be empty")
         self.discriminators = nn.ModuleList(
-            [
-                FastPeriodDiscriminator(period, initial_channels, strides, kernel_size)
-                for period in period_values
-            ]
+            FastPD(period, init_channel, strides, kernel_size) for period in self.periods
         )
 
-    def forward(self, audio: Tensor) -> DiscriminatorOutput:
-        outputs = [discriminator(audio) for discriminator in self.discriminators]
-        return DiscriminatorOutput(
-            [scores for scores, _ in outputs],
-            [features for _, features in outputs],
-        )
+    def forward(
+        self,
+        y: Tensor,
+        infer_last_layer: bool = True,
+    ) -> tuple[list[Tensor], list[list[Tensor]]]:
+        outputs = [
+            discriminator(y, infer_last_layer=infer_last_layer)
+            for discriminator in self.discriminators
+        ]
+        return [score for score, _ in outputs], [features for _, features in outputs]
 
 
-class SpectrogramResidualBlock(nn.Module):
-    def __init__(self, channels: int, depthwise: bool = False) -> None:
+class ResBlock(nn.Module):
+    def __init__(self, dim: int, use_dwconv: bool = False) -> None:
         super().__init__()
-        self.layers = nn.Sequential(
-            PermuteDimensions((0, 3, 1, 2)),
+        self.net = nn.Sequential(
+            Permute((0, 3, 1, 2)),
             nn.Conv2d(
-                channels,
-                channels * 2,
+                dim,
+                dim * 2,
                 kernel_size=3,
                 padding=1,
-                groups=channels if depthwise else 1,
+                groups=dim if use_dwconv else 1,
             ),
-            PermuteDimensions((0, 2, 3, 1)),
-            SoftSignGatedLinearUnit(),
-            nn.Linear(channels, channels),
+            Permute((0, 2, 3, 1)),
+            SoftSignGLU(),
+            nn.Linear(dim, dim),
         )
 
-    def forward(self, inputs: Tensor, normalized_inputs: Tensor | None = None) -> Tensor:
-        if normalized_inputs is None:
-            normalized_inputs = F.rms_norm(inputs, (inputs.size(-1),))
-        return inputs + cast(Tensor, self.layers(normalized_inputs))
+    def forward(self, x: Tensor, norm_x: Tensor | None = None) -> Tensor:
+        if norm_x is None:
+            norm_x = F.rms_norm(x, (x.size(-1),))
+        return x + cast(Tensor, self.net(norm_x))
 
 
-class FastSpectrogramDiscriminator(nn.Module):
+class FastSpecD(nn.Module):
+    window: Tensor
+    freq_coords: Tensor
+
     def __init__(
         self,
-        initial_channels: int = 8,
+        init_channel: int = 8,
         strides: Sequence[int] = (4, 2, 2),
         fft_size: int = 1024,
-        hop_size: int = 128,
-        window_length: int = 1024,
+        shift_size: int = 128,
+        win_length: int = 1024,
         window: WindowName = "hann_window",
     ) -> None:
         super().__init__()
-        if initial_channels <= 0:
-            raise ValueError("initial_channels must be positive")
-        self.strides = tuple(strides)
-        if not self.strides or any(stride < 1 for stride in self.strides):
-            raise ValueError("strides must contain positive integers")
+        init_channel = _positive_integer(init_channel, "init_channel")
+        self.strides = tuple(_positive_integer(stride, "stride") for stride in strides)
+        if not self.strides:
+            raise ValueError("strides must not be empty")
         self.expansion = prod(self.strides)
-        if min(fft_size, hop_size, window_length) <= 0:
-            raise ValueError("spectrogram sizes must be positive")
-        if window_length > fft_size:
-            raise ValueError("window_length must not exceed fft_size")
-        self.fft_size = fft_size
-        self.hop_size = hop_size
-        self.window_length = window_length
-        self.register_buffer("window", build_window(window, window_length))
+        self.fft_size = _positive_integer(fft_size, "fft_size")
+        self.shift_size = _positive_integer(shift_size, "shift_size")
+        self.win_length = _positive_integer(win_length, "win_length")
+        if self.win_length > self.fft_size:
+            raise ValueError("win_length must not exceed fft_size")
+        self.register_buffer("window", build_window(window, self.win_length))
         self.register_buffer(
-            "frequency_coordinates",
-            torch.linspace(-1, 1, fft_size // 2 + 1).view(-1, 1, 1),
+            "freq_coords",
+            torch.linspace(-1, 1, self.fft_size // 2 + 1).view(-1, 1, 1),
         )
-        self.input_projection = nn.Linear(self.strides[0], initial_channels * self.strides[0])
-        self.frequency_projection = nn.Linear(1, initial_channels * self.strides[0])
-        self.residual_blocks = nn.ModuleList(
-            [
-                SpectrogramResidualBlock(initial_channels * prod(self.strides[: index + 1]))
-                for index in range(len(self.strides))
-            ]
+        self.pre = nn.Linear(self.strides[0], init_channel * self.strides[0])
+        self.freq = nn.Linear(1, init_channel * self.strides[0])
+        self.layers = nn.ModuleList(
+            ResBlock(init_channel * prod(self.strides[: index + 1]), use_dwconv=False)
+            for index in range(len(self.strides))
         )
-        self.output_projection = nn.Linear(initial_channels * self.expansion, 1)
+        self.post = nn.Linear(init_channel * self.expansion, 1)
 
-    def forward(self, audio: Tensor) -> tuple[Tensor, list[Tensor]]:
-        magnitude = torch.stft(
-            audio.squeeze(1),
+    def forward(
+        self,
+        x: Tensor,
+        infer_last_layer: bool = True,
+    ) -> tuple[Tensor, list[Tensor]]:
+        feature_maps: list[Tensor] = []
+        x = torch.stft(
+            x.squeeze(1),
             self.fft_size,
-            self.hop_size,
-            self.window_length,
-            cast(Tensor, self.window),
+            self.shift_size,
+            self.win_length,
+            self.window,
             return_complex=True,
-        ).abs()
-        magnitude = magnitude.clamp_min_(1e-5).log10_()
+        )
+        x = x.abs()
+        x.clamp_(min=1e-5).log10_()
 
-        batch_size, frequencies, frames = magnitude.shape
+        batch, frequencies, frames = x.shape
         usable_frames = frames // self.expansion * self.expansion
         if usable_frames == 0:
             raise ValueError(
                 f"spectrogram requires at least {self.expansion} frames, received {frames}"
             )
-        hidden = magnitude[:, :, :usable_frames, None].reshape(
-            batch_size, frequencies, -1, self.strides[0]
-        )
-        hidden = self.input_projection(hidden) + self.frequency_projection(
-            self.frequency_coordinates
+        x = x[:, :, :usable_frames, None]
+        x = x.view(batch, frequencies, -1, self.strides[0])
+        x = self.pre(x) + self.freq(self.freq_coords)
+        for index, layer in enumerate(self.layers):
+            if index > 0:
+                x = x.view(batch, frequencies, -1, x.size(3) * self.strides[index])
+            norm_x = F.rms_norm(x, (x.size(-1),))
+            if index > 0:
+                feature_maps.append(norm_x)
+            if not infer_last_layer and index == len(self.layers) - 1:
+                return norm_x, feature_maps
+            x = layer(x, norm_x)
+        x = F.rms_norm(x, (x.size(-1),))
+        return self.post(x), feature_maps
+
+
+class FastMRD(nn.Module):
+    def __init__(
+        self,
+        init_channel: int = 8,
+        strides: Sequence[int] = (4, 2, 2),
+        fft_sizes: Sequence[int] = (1024, 2048, 512),
+        hop_sizes: Sequence[int] = (128, 256, 64),
+        win_lengths: Sequence[int] = (1024, 2048, 512),
+        window: WindowName = "hann_window",
+    ) -> None:
+        super().__init__()
+        resolutions = validate_resolutions(fft_sizes, hop_sizes, win_lengths)
+        self.discriminators = nn.ModuleList(
+            FastSpecD(
+                init_channel,
+                strides,
+                fft_size,
+                hop_size,
+                win_length,
+                window,
+            )
+            for fft_size, hop_size, win_length in resolutions
         )
 
-        feature_maps: list[Tensor] = []
-        for index, block in enumerate(self.residual_blocks):
-            if index > 0:
-                hidden = hidden.reshape(
-                    batch_size,
-                    frequencies,
-                    -1,
-                    hidden.size(3) * self.strides[index],
-                )
-            normalized = F.rms_norm(hidden, (hidden.size(-1),))
-            if index > 0:
-                feature_maps.append(normalized)
-            hidden = block(hidden, normalized)
+    def forward(
+        self,
+        y: Tensor,
+        infer_last_layer: bool = True,
+    ) -> tuple[list[Tensor], list[list[Tensor]]]:
+        outputs = [
+            discriminator(y, infer_last_layer=infer_last_layer)
+            for discriminator in self.discriminators
+        ]
+        return [score for score, _ in outputs], [features for _, features in outputs]
 
-        hidden = F.rms_norm(hidden, (hidden.size(-1),))
-        return self.output_projection(hidden), feature_maps
+
+class FastMultiPeriodDiscriminator(DiscriminatorComponent):
+    def __init__(
+        self,
+        periods: Sequence[int] | None = None,
+        init_channel: int = 8,
+        strides: Sequence[int] = (4, 4, 4),
+        kernel_size: int = 11,
+    ) -> None:
+        super().__init__()
+        self.backbone = FastMPD(periods, init_channel, strides, kernel_size)
+
+    def forward(self, audio: Tensor) -> DiscriminatorOutput:
+        scores, feature_maps = self.backbone(audio)
+        return DiscriminatorOutput(scores, feature_maps)
 
 
 class FastMultiResolutionDiscriminator(DiscriminatorComponent):
     def __init__(
         self,
-        initial_channels: int = 8,
+        init_channel: int = 8,
         strides: Sequence[int] = (4, 2, 2),
         fft_sizes: Sequence[int] = (1024, 2048, 512),
         hop_sizes: Sequence[int] = (128, 256, 64),
-        window_lengths: Sequence[int] = (1024, 2048, 512),
+        win_lengths: Sequence[int] = (1024, 2048, 512),
         window: WindowName = "hann_window",
     ) -> None:
         super().__init__()
-        resolutions = validate_resolutions(fft_sizes, hop_sizes, window_lengths)
-        self.discriminators = nn.ModuleList(
-            [
-                FastSpectrogramDiscriminator(
-                    initial_channels,
-                    strides,
-                    fft_size,
-                    hop_size,
-                    window_length,
-                    window,
-                )
-                for fft_size, hop_size, window_length in resolutions
-            ]
+        self.backbone = FastMRD(
+            init_channel,
+            strides,
+            fft_sizes,
+            hop_sizes,
+            win_lengths,
+            window,
         )
 
     def forward(self, audio: Tensor) -> DiscriminatorOutput:
-        outputs = [discriminator(audio) for discriminator in self.discriminators]
-        return DiscriminatorOutput(
-            [scores for scores, _ in outputs],
-            [features for _, features in outputs],
-        )
+        scores, feature_maps = self.backbone(audio)
+        return DiscriminatorOutput(scores, feature_maps)
