@@ -18,6 +18,21 @@ vocoder config validate nsf-hifigan \
 
 `config validate` also constructs the complete reflective component graph, so invalid constructor parameters and contract violations are detected before training.
 
+## Dynamic validation
+
+The configuration system provides the dynamic behavior used by the GAME and FA2026 frameworks without copying their scope bitmasks or expression-language implementation. The equivalent responsibilities are split across standard tools:
+
+| Configuration responsibility | Implementation |
+| --- | --- |
+| Inheritance and late overrides | Relative `bases`, leaf merge, then OmegaConf dotlist overrides |
+| References to another field | OmegaConf interpolation such as `${data.features.hop_size}` |
+| Conditional configuration shapes | Pydantic discriminated unions for objectives, optimization plans, optimizers, and schedulers |
+| Cross-field checks | Pydantic model validators for feature limits, model/data dimensions, plan/objective pairing, warm-up boundaries, and optimizer routes |
+| Backbone-specific open parameters | `ComponentSpec.params`, followed by exact constructor binding and full component construction |
+| Runtime contracts | Required Generator/Discriminator base contracts and typed batch/output validation |
+
+This project has one compositional `VocoderTask`, so it does not delete fields according to a task scope. A resolved recipe is validated as one complete object instead. Reflective Generator and Discriminator parameters remain deliberately open for experiments, while unknown fields anywhere else are rejected. Constructor arguments are never silently filtered.
+
 Built-in names may contain a namespace, for example `historical/ft-hifigan`. Recipe discovery and resolution are recursive, while internal files whose names begin with `_` remain hidden. See [Migrated configurations](migrated-configs.md) for the mapping from pre-refactor files.
 
 ## Reflective model parameters
