@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Literal
+from collections.abc import Mapping
+from typing import Any, Literal
 
 from torch import Tensor, nn
 
@@ -9,32 +10,36 @@ from singing_vocoders.modules.backbones.univnet import (
     UnivNetBackbone,
 )
 from singing_vocoders.modules.ddsp.vocoder import build_vocoder
-from singing_vocoders.modules.lvc.conditioning import SourceDownsampler
+from singing_vocoders.modules.lvc.conditioning import ddsp_down
 
 
-class DDSPSource(nn.Module):
-    def __init__(
-        self,
-        *,
-        sample_rate: int,
-        num_mels: int,
-        hop_size: int,
-        win_size: int,
-        type: Literal["Sins", "CombSub"],
-        n_mag_noise: int,
-        n_harmonics: int | None,
-        n_mag_harmonic: int | None,
-    ) -> None:
+class DDSP(nn.Module):
+    def __init__(self, config: Mapping[str, Any]) -> None:
         super().__init__()
+        model_args_value = config.get("model_args")
+        if not isinstance(model_args_value, Mapping):
+            raise TypeError("model_args must be a mapping")
+        model_args: Mapping[str, Any] = model_args_value
+        vocoder_type = model_args.get("type")
+        if vocoder_type not in {"Sins", "CombSub"}:
+            raise ValueError(f"unsupported DDSP type: {vocoder_type}")
         self.ddsp = build_vocoder(
-            type,
-            sampling_rate=sample_rate,
-            block_size=hop_size,
-            win_length=win_size,
-            n_mag_noise=n_mag_noise,
-            n_mels=num_mels,
-            n_harmonics=n_harmonics,
-            n_mag_harmonic=n_mag_harmonic,
+            vocoder_type,
+            sampling_rate=int(config["audio_sample_rate"]),
+            block_size=int(config["hop_size"]),
+            win_length=int(config["win_size"]),
+            n_mag_noise=int(model_args["n_mag_noise"]),
+            n_mels=int(config["audio_num_mel_bins"]),
+            n_harmonics=(
+                int(model_args["n_harmonics"])
+                if vocoder_type == "Sins" and model_args.get("n_harmonics") is not None
+                else None
+            ),
+            n_mag_harmonic=(
+                int(model_args["n_mag_harmonic"])
+                if vocoder_type == "CombSub" and model_args.get("n_mag_harmonic") is not None
+                else None
+            ),
         )
 
     def forward(
@@ -43,51 +48,39 @@ class DDSPSource(nn.Module):
         f0: Tensor,
         infer: bool = False,
     ) -> tuple[Tensor, Tensor, Tensor]:
-        signal, _, (harmonic, noise) = self.ddsp(mel.transpose(1, 2), f0.unsqueeze(-1), infer=infer)
+        signal, _, (harmonic, noise) = self.ddsp(
+            mel.transpose(1, 2),
+            f0.unsqueeze(-1),
+            infer=infer,
+        )
         return signal.unsqueeze(1), harmonic, noise
 
 
-class DDSPUnivNetBackbone(UnivNetBackbone):
-    def __init__(
-        self,
-        architecture: UnivNetArchitecture,
-        *,
-        sample_rate: int,
-        num_mels: int,
-        hop_size: int,
-        win_size: int,
-        type: Literal["Sins", "CombSub"],
-        n_mag_noise: int,
-        n_harmonics: int | None,
-        n_mag_harmonic: int | None,
-        use_weight_norm: bool,
-    ) -> None:
-        super().__init__(architecture, source_channels=architecture.hidden_channels)
-        self.source_downsampler = SourceDownsampler(
-            architecture.hidden_channels,
-            architecture.waveform_upsample_rates,
+class ddspUnivNet(UnivNetBackbone):
+    def __init__(self, config: Mapping[str, Any], use_weight_norm: bool = True) -> None:
+        nn.Module.__init__(self)
+        architecture = UnivNetArchitecture.from_config(config)
+        self.ddsp = DDSP(config)
+        self.ddspd = ddsp_down(dims=architecture.cg_channels, downs=architecture.upsample_rates)
+        self._initialize_backbone(
+            architecture,
+            source_channels=architecture.cg_channels,
         )
         if use_weight_norm:
             self.apply_weight_norm()
-        self.source = DDSPSource(
-            sample_rate=sample_rate,
-            num_mels=num_mels,
-            hop_size=hop_size,
-            win_size=win_size,
-            type=type,
-            n_mag_noise=n_mag_noise,
-            n_harmonics=n_harmonics,
-            n_mag_harmonic=n_mag_harmonic,
-        )
 
     def forward(
         self,
-        noise_input: Tensor,
-        mel: Tensor,
+        x: Tensor,
+        c: Tensor,
         f0: Tensor,
         infer: bool = False,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
-        ddsp_audio, harmonic, noise = self.source(mel, f0, infer)
-        source_features = self.source_downsampler(ddsp_audio)
-        audio = self.forward_backbone(noise_input, mel, source_features)
-        return audio, ddsp_audio, harmonic, noise
+        ddsp_waveform, harmonic, noise = self.ddsp(c, f0, infer=infer)
+        spec = self.ddspd(ddsp_waveform)
+        output = self.forward_backbone(x, c, spec)
+        return output, ddsp_waveform, harmonic, noise
+
+
+DDSPUnivNetBackbone = ddspUnivNet
+DDSPType = Literal["Sins", "CombSub"]

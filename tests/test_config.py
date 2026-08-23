@@ -97,6 +97,12 @@ def test_all_builtin_recipes_validate() -> None:
     assert fast_optimization.generator.optimizers[1].optimizer.betas == (0.9, 0.999)
     assert loaded["historical/hifivae"].data.features.num_mels == 192
     assert loaded["historical/base-ddspgan"].data.features.pitch_extractor == "parselmouth"
+    univnet_params = loaded["univnet"].model.generator.params
+    assert univnet_params["cond_in_channels"] == 128
+    assert univnet_params["cg_channels"] == 32
+    assert univnet_params["upsample_rates"] == [8, 8, 4]
+    assert univnet_params["upmel"] == 2
+    assert "noise_channels" not in univnet_params
 
 
 def test_builtin_recipe_resolution_rejects_internal_and_escaping_paths() -> None:
@@ -201,7 +207,7 @@ def test_hifivae_hop_size_tracks_data_features() -> None:
 @pytest.mark.parametrize(
     ("recipe", "override", "message"),
     [
-        ("univnet", "model.generator.params.output_channels=2", "output_channels=1"),
+        ("univnet", "model.generator.params.out_channels=2", "out_channels=1"),
         (
             "nsf-hifigan",
             "model.generator.params.upsample_kernel_sizes=[3,16,4,4,4]",

@@ -9,16 +9,16 @@ model:
       hop_size: ${data.features.hop_size}
       win_size: ${data.features.win_size}
       use_weight_norm: true
-      waveform_upsample_rates: [8, 8, 4]
-      noise_channels: 128
-      output_channels: 1
-      hidden_channels: 32
-      lvc_layers_per_block: 4
-      lvc_kernel_size: 5
-      kernel_predictor_hidden_channels: 96
-      kernel_predictor_kernel_size: 3
-      kernel_predictor_dropout: 0
-      mel_upsample_factor: 2
+      upsample_rates: [8, 8, 4]
+      cond_in_channels: 128
+      out_channels: 1
+      cg_channels: 32
+      num_lvc_blocks: 4
+      lvc_kernels: 5
+      lvc_hidden_channels: 96
+      lvc_conv_size: 3
+      dropout: 0
+      upmel: 2
 runtime:
   max_steps: 800000
   validate_every: 8000

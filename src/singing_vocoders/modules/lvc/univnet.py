@@ -1,238 +1,280 @@
 from __future__ import annotations
 
-from typing import cast
+from collections.abc import Mapping
+from typing import Any
 
 import torch
-import torch.nn.functional as functional
 from torch import Tensor, nn
+from torch.nn import functional as F
+
+
+def _positive(value: int, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ValueError(f"{name} must be a positive integer")
+    return value
+
+
+def _odd_positive(value: int, name: str) -> int:
+    value = _positive(value, name)
+    if value % 2 == 0:
+        raise ValueError(f"{name} must be odd")
+    return value
 
 
 class KernelPredictor(nn.Module):
     def __init__(
         self,
-        *,
-        conditioning_channels: int,
-        input_channels: int,
-        output_channels: int,
-        convolution_layers: int,
-        convolution_kernel_size: int = 3,
-        hidden_channels: int = 64,
-        predictor_kernel_size: int = 3,
-        dropout: float = 0.0,
+        cond_channels: int,
+        conv_in_channels: int,
+        conv_out_channels: int,
+        conv_layers: int,
+        conv_kernel_size: int = 3,
+        kpnet_hidden_channels: int = 64,
+        kpnet_conv_size: int = 3,
+        kpnet_dropout: float = 0.0,
+        kpnet_nonlinear_activation: str = "LeakyReLU",
+        kpnet_nonlinear_activation_params: Mapping[str, Any] | None = None,
     ) -> None:
         super().__init__()
-        positive_dimensions = {
-            "conditioning_channels": conditioning_channels,
-            "input_channels": input_channels,
-            "output_channels": output_channels,
-            "convolution_layers": convolution_layers,
-            "hidden_channels": hidden_channels,
-        }
-        for name, value in positive_dimensions.items():
-            if value <= 0:
-                raise ValueError(f"{name} must be positive")
-        if convolution_kernel_size <= 0 or convolution_kernel_size % 2 == 0:
-            raise ValueError("convolution_kernel_size must be a positive odd integer")
-        if predictor_kernel_size <= 0 or predictor_kernel_size % 2 == 0:
-            raise ValueError("predictor_kernel_size must be a positive odd integer")
-        if not 0.0 <= dropout < 1.0:
-            raise ValueError("dropout must be in the range [0, 1)")
-        self.input_channels = input_channels
-        self.output_channels = output_channels
-        self.convolution_kernel_size = convolution_kernel_size
-        self.convolution_layers = convolution_layers
+        self.conv_in_channels = _positive(conv_in_channels, "conv_in_channels")
+        self.conv_out_channels = _positive(conv_out_channels, "conv_out_channels")
+        self.conv_kernel_size = _odd_positive(conv_kernel_size, "conv_kernel_size")
+        self.conv_layers = _positive(conv_layers, "conv_layers")
+        cond_channels = _positive(cond_channels, "cond_channels")
+        kpnet_hidden_channels = _positive(kpnet_hidden_channels, "kpnet_hidden_channels")
+        kpnet_conv_size = _odd_positive(kpnet_conv_size, "kpnet_conv_size")
+        if not 0 <= kpnet_dropout < 1:
+            raise ValueError("kpnet_dropout must be in the range [0, 1)")
+
+        activation_type = getattr(nn, kpnet_nonlinear_activation, None)
+        if not isinstance(activation_type, type) or not issubclass(activation_type, nn.Module):
+            raise ValueError(f"unsupported activation: {kpnet_nonlinear_activation}")
+        activation_params = dict(
+            {"negative_slope": 0.1}
+            if kpnet_nonlinear_activation_params is None
+            else kpnet_nonlinear_activation_params
+        )
 
         kernel_channels = (
-            input_channels * output_channels * convolution_kernel_size * convolution_layers
+            self.conv_in_channels
+            * self.conv_out_channels
+            * self.conv_kernel_size
+            * self.conv_layers
         )
-        bias_channels = output_channels * convolution_layers
-        predictor_padding = (predictor_kernel_size - 1) // 2
-
-        def activation() -> nn.Module:
-            return nn.LeakyReLU(negative_slope=0.1)
-
+        bias_channels = self.conv_out_channels * self.conv_layers
+        padding = (kpnet_conv_size - 1) // 2
         self.input_conv = nn.Sequential(
-            nn.Conv1d(conditioning_channels, hidden_channels, kernel_size=5, padding=2),
-            activation(),
+            nn.Conv1d(cond_channels, kpnet_hidden_channels, 5, padding=2, bias=True),
+            activation_type(**activation_params),
         )
-        residual_layers: list[nn.Module] = []
-        for _ in range(3):
-            residual_layers.append(nn.Dropout(dropout))
-            for _ in range(2):
-                residual_layers.extend(
-                    (
-                        nn.Conv1d(
-                            hidden_channels,
-                            hidden_channels,
-                            predictor_kernel_size,
-                            padding=predictor_padding,
-                        ),
-                        activation(),
-                    )
-                )
-        self.residual_conv = nn.Sequential(*residual_layers)
+        self.residual_conv = nn.Sequential(
+            nn.Dropout(kpnet_dropout),
+            nn.Conv1d(
+                kpnet_hidden_channels,
+                kpnet_hidden_channels,
+                kpnet_conv_size,
+                padding=padding,
+                bias=True,
+            ),
+            activation_type(**activation_params),
+            nn.Conv1d(
+                kpnet_hidden_channels,
+                kpnet_hidden_channels,
+                kpnet_conv_size,
+                padding=padding,
+                bias=True,
+            ),
+            activation_type(**activation_params),
+            nn.Dropout(kpnet_dropout),
+            nn.Conv1d(
+                kpnet_hidden_channels,
+                kpnet_hidden_channels,
+                kpnet_conv_size,
+                padding=padding,
+                bias=True,
+            ),
+            activation_type(**activation_params),
+            nn.Conv1d(
+                kpnet_hidden_channels,
+                kpnet_hidden_channels,
+                kpnet_conv_size,
+                padding=padding,
+                bias=True,
+            ),
+            activation_type(**activation_params),
+            nn.Dropout(kpnet_dropout),
+            nn.Conv1d(
+                kpnet_hidden_channels,
+                kpnet_hidden_channels,
+                kpnet_conv_size,
+                padding=padding,
+                bias=True,
+            ),
+            activation_type(**activation_params),
+            nn.Conv1d(
+                kpnet_hidden_channels,
+                kpnet_hidden_channels,
+                kpnet_conv_size,
+                padding=padding,
+                bias=True,
+            ),
+            activation_type(**activation_params),
+        )
         self.kernel_conv = nn.Conv1d(
-            hidden_channels,
+            kpnet_hidden_channels,
             kernel_channels,
-            predictor_kernel_size,
-            padding=predictor_padding,
+            kpnet_conv_size,
+            padding=padding,
+            bias=True,
         )
         self.bias_conv = nn.Conv1d(
-            hidden_channels,
+            kpnet_hidden_channels,
             bias_channels,
-            predictor_kernel_size,
-            padding=predictor_padding,
+            kpnet_conv_size,
+            padding=padding,
+            bias=True,
         )
 
-    def forward(self, conditioning: Tensor) -> tuple[Tensor, Tensor]:
-        batch_size, _, conditioning_length = conditioning.shape
-        hidden = self.input_conv(conditioning)
-        hidden = hidden + self.residual_conv(hidden)
-        kernels = self.kernel_conv(hidden).reshape(
-            batch_size,
-            self.convolution_layers,
-            self.input_channels,
-            self.output_channels,
-            self.convolution_kernel_size,
-            conditioning_length,
+    def forward(self, c: Tensor) -> tuple[Tensor, Tensor]:
+        batch, _, cond_length = c.shape
+        c = self.input_conv(c)
+        c = c + self.residual_conv(c)
+        kernels = (
+            self.kernel_conv(c)
+            .contiguous()
+            .view(
+                batch,
+                self.conv_layers,
+                self.conv_in_channels,
+                self.conv_out_channels,
+                self.conv_kernel_size,
+                cond_length,
+            )
         )
-        biases = self.bias_conv(hidden).reshape(
-            batch_size,
-            self.convolution_layers,
-            self.output_channels,
-            conditioning_length,
+        bias = (
+            self.bias_conv(c)
+            .contiguous()
+            .view(
+                batch,
+                self.conv_layers,
+                self.conv_out_channels,
+                cond_length,
+            )
         )
-        return kernels, biases
+        return kernels, bias
 
 
-class LocationVariableConvolutionBlock(nn.Module):
+class LVCBlock(nn.Module):
     def __init__(
         self,
-        *,
-        input_channels: int,
-        conditioning_channels: int,
+        in_channels: int,
+        cond_channels: int,
         upsample_ratio: int,
-        convolution_layers: int = 4,
-        convolution_kernel_size: int = 3,
-        conditioning_hop_length: int = 256,
-        predictor_hidden_channels: int = 64,
-        predictor_kernel_size: int = 3,
-        predictor_dropout: float = 0.0,
+        conv_layers: int = 4,
+        conv_kernel_size: int = 3,
+        cond_hop_length: int = 256,
+        kpnet_hidden_channels: int = 64,
+        kpnet_conv_size: int = 3,
+        kpnet_dropout: float = 0.0,
         source_channels: int | None = None,
     ) -> None:
         super().__init__()
-        if upsample_ratio <= 0:
-            raise ValueError("LVC upsample ratio must be positive")
-        if conditioning_hop_length <= 0:
-            raise ValueError("LVC conditioning hop length must be positive")
-        if source_channels is not None and source_channels <= 0:
-            raise ValueError("LVC source channels must be positive")
-
-        self.conditioning_hop_length = conditioning_hop_length
-        self.input_channels = input_channels
+        in_channels = _positive(in_channels, "in_channels")
+        upsample_ratio = _positive(upsample_ratio, "upsample_ratio")
+        self.cond_hop_length = _positive(cond_hop_length, "cond_hop_length")
+        self.conv_layers = _positive(conv_layers, "conv_layers")
+        self.conv_kernel_size = _odd_positive(conv_kernel_size, "conv_kernel_size")
+        if source_channels is not None:
+            source_channels = _positive(source_channels, "source_channels")
+            self.nsfppj: nn.Conv1d | None = nn.Conv1d(
+                in_channels + source_channels,
+                in_channels,
+                kernel_size=1,
+            )
+        else:
+            self.nsfppj = None
+        self.convs = nn.ModuleList()
         self.upsample = nn.ConvTranspose1d(
-            input_channels,
-            input_channels,
+            in_channels,
+            in_channels,
             kernel_size=upsample_ratio * 2,
             stride=upsample_ratio,
             padding=upsample_ratio // 2 + upsample_ratio % 2,
             output_padding=upsample_ratio % 2,
         )
-        self.source_projection = (
-            nn.Conv1d(input_channels + source_channels, input_channels, kernel_size=1)
-            if source_channels is not None
-            else None
-        )
         self.kernel_predictor = KernelPredictor(
-            conditioning_channels=conditioning_channels,
-            input_channels=input_channels,
-            output_channels=2 * input_channels,
-            convolution_layers=convolution_layers,
-            convolution_kernel_size=convolution_kernel_size,
-            hidden_channels=predictor_hidden_channels,
-            predictor_kernel_size=predictor_kernel_size,
-            dropout=predictor_dropout,
+            cond_channels=cond_channels,
+            conv_in_channels=in_channels,
+            conv_out_channels=2 * in_channels,
+            conv_layers=self.conv_layers,
+            conv_kernel_size=self.conv_kernel_size,
+            kpnet_hidden_channels=kpnet_hidden_channels,
+            kpnet_conv_size=kpnet_conv_size,
+            kpnet_dropout=kpnet_dropout,
         )
-        self.convolutions = nn.ModuleList(
-            nn.Conv1d(
-                input_channels,
-                input_channels,
-                kernel_size=convolution_kernel_size,
-                padding=(3**index) * ((convolution_kernel_size - 1) // 2),
-                dilation=3**index,
-            )
-            for index in range(convolution_layers)
-        )
-
-    def forward(
-        self,
-        inputs: Tensor,
-        conditioning: Tensor,
-        source: Tensor | None = None,
-    ) -> Tensor:
-        kernels, biases = self.kernel_predictor(conditioning)
-        hidden = self.upsample(functional.leaky_relu(inputs, negative_slope=0.2))
-
-        if self.source_projection is None:
-            if source is not None:
-                raise ValueError("source features were provided to an unconditioned LVC block")
-        else:
-            if source is None:
-                raise ValueError("source-conditioned LVC block requires source features")
-            if source.shape[0] != hidden.shape[0] or source.shape[-1] != hidden.shape[-1]:
-                raise ValueError(
-                    "source features must match the upsampled LVC batch and time dimensions"
+        for index in range(self.conv_layers):
+            dilation = 3**index
+            padding = dilation * ((self.conv_kernel_size - 1) // 2)
+            self.convs.append(
+                nn.Conv1d(
+                    in_channels,
+                    in_channels,
+                    kernel_size=self.conv_kernel_size,
+                    padding=padding,
+                    dilation=dilation,
                 )
-            hidden = self.source_projection(torch.cat((hidden, source), dim=1))
-
-        for index, convolution in enumerate(self.convolutions):
-            residual = functional.leaky_relu(hidden, negative_slope=0.2)
-            residual = convolution(residual)
-            residual = functional.leaky_relu(residual, negative_slope=0.2)
-            residual = self._location_variable_convolution(
-                residual,
-                kernels[:, index],
-                biases[:, index],
-                hop_size=self.conditioning_hop_length,
             )
-            gates, values = residual.chunk(2, dim=1)
-            hidden = hidden + gates.sigmoid() * values.tanh()
-        return cast(Tensor, hidden)
+
+    def forward(self, x: Tensor, c: Tensor, spec: Tensor | None = None) -> Tensor:
+        in_channels = x.shape[1]
+        kernels, bias = self.kernel_predictor(c)
+        x = F.leaky_relu(x, 0.2)
+        x = self.upsample(x)
+        if self.nsfppj is None:
+            if spec is not None:
+                raise ValueError("spec must not be provided to an unconditioned LVC block")
+        else:
+            if spec is None:
+                raise ValueError("source-conditioned LVC block requires spec")
+            if spec.shape[0] != x.shape[0] or spec.shape[-1] != x.shape[-1]:
+                raise ValueError("spec must match the upsampled LVC batch and time dimensions")
+            x = self.nsfppj(torch.cat((x, spec), dim=1))
+
+        for index in range(self.conv_layers):
+            y = F.leaky_relu(x, 0.2)
+            y = self.convs[index](y)
+            y = F.leaky_relu(y, 0.2)
+            y = self.location_variable_convolution(
+                y,
+                kernels[:, index],
+                bias[:, index],
+                1,
+                self.cond_hop_length,
+            )
+            x = x + torch.sigmoid(y[:, :in_channels]) * torch.tanh(y[:, in_channels:])
+        return x
 
     @staticmethod
-    def _location_variable_convolution(
-        inputs: Tensor,
+    def location_variable_convolution(
+        x: Tensor,
         kernel: Tensor,
         bias: Tensor,
-        *,
+        dilation: int,
         hop_size: int,
-        dilation: int = 1,
     ) -> Tensor:
-        batch_size, input_channels, input_length = inputs.shape
-        (
-            kernel_batch_size,
-            kernel_input_channels,
-            output_channels,
-            kernel_size,
-            kernel_length,
-        ) = kernel.shape
-        if batch_size != kernel_batch_size or input_channels != kernel_input_channels:
-            raise ValueError("LVC input and predicted kernel dimensions do not match")
-        if input_length != kernel_length * hop_size:
-            raise ValueError(
-                "LVC input length must equal conditioning length multiplied by hop size "
-                f"({input_length} != {kernel_length} * {hop_size})"
-            )
-
+        batch, _, in_length = x.shape
+        _, _, out_channels, kernel_size, kernel_length = kernel.shape
+        if in_length != kernel_length * hop_size:
+            raise ValueError("input and location-variable kernel lengths do not match")
         padding = dilation * ((kernel_size - 1) // 2)
-        windows = functional.pad(inputs, (padding, padding))
-        windows = windows.unfold(2, hop_size + 2 * padding, hop_size)
+        x = F.pad(x, (padding, padding), "constant", 0)
+        x = x.unfold(2, hop_size + 2 * padding, hop_size)
         if hop_size < dilation:
-            windows = functional.pad(windows, (0, dilation))
-        windows = windows.unfold(3, dilation, dilation)
-        windows = windows[:, :, :, :, :hop_size].transpose(3, 4)
-        windows = windows.unfold(4, kernel_size, 1)
-
-        output = torch.einsum("bildsk,biokl->bolsd", windows, kernel)
+            x = F.pad(x, (0, dilation), "constant", 0)
+        x = x.unfold(3, dilation, dilation)
+        x = x[:, :, :, :, :hop_size]
+        x = x.transpose(3, 4)
+        x = x.unfold(4, kernel_size, 1)
+        output = torch.einsum("bildsk,biokl->bolsd", x, kernel)
         output = output + bias.unsqueeze(-1).unsqueeze(-1)
-        return output.reshape(batch_size, output_channels, -1)
+        return output.contiguous().view(batch, out_channels, -1)
