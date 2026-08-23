@@ -6,14 +6,31 @@ SingingVocoders 是面向歌声音频的神经声码器训练框架。训练运�
 
 ## 安装
 
-Windows 环境默认从 Conda explicit lock 和带 SHA-256 的 Python lock 创建。脚本发现同名环境时会直接停止，不会修改或删除已有环境；仅在 Conda 已成功创建新环境、而后续 Python 安装失败时清理该新环境。若 Conda 创建本身失败，脚本不会按名称删除任何环境：
+先创建不包含 PyTorch 的基础环境：
+
+```powershell
+conda env create -f environment.yml
+conda activate singing-vocoders-refactor
+```
+
+然后在 [PyTorch 官方安装选择器](https://pytorch.org/get-started/locally/) 中选择操作系统、Pip 和所需的 CPU/CUDA/ROCm 构建，复制并执行官网给出的命令，再安装本项目：
+
+```powershell
+# 先执行官网生成的 PyTorch 安装命令
+python -m pip install -e ".[dev]"
+python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
+```
+
+项目声明的兼容范围为 `torch>=2.11,<3`，不锁定具体 PyTorch patch/minor 版本，也不依赖未使用的 Torchaudio。PyTorch 2.11 起，PyPI 上 x86_64 的默认 `pip install torch` wheel 已改为 CUDA 13，但 CPU、其他 CUDA 版本和 ROCm 仍使用不同构件；因此不要依赖裸命令的隐含平台选择。
+
+如需精确复现本仓库的 Windows 验收环境，可使用固定为 PyTorch 2.11.0 CUDA 13.0 的参考锁：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\create_env.ps1
 conda activate singing-vocoders-refactor
 ```
 
-环境固定为 Python 3.11、PyTorch/Torchaudio 2.11.0 CUDA 13.0、Lightning Fabric 2.6.5 和 NumPy 1.26.4。`conda-win-64.lock` 固定 Conda URL 与 SHA-256，`pylock.win-64.toml` 固定每个 Python 构件及 SHA-256；`environment.yml` 仅作为需要在线求解时的开发规格，不是复现安装入口。安装后只会注册一个命令：`vocoder`。
+该脚本发现同名环境时会停止，不会修改或删除已有环境；仅在 Conda 已成功创建新环境、而后续 Python 安装失败时清理该新环境。`conda-win-64.lock` 和 `pylock.win-64.toml` 是验收快照，不是项目支持版本上限。安装后只会注册一个命令：`vocoder`。
 
 ## 快速开始
 
@@ -80,6 +97,8 @@ vocoder export experiments\run\step-00001000.ckpt exports\model.pt
 - `nsf-univnet-msd`
 - `pc-nsf-hifigan`：`nsf-hifigan` 的 PC-NSF 配置叠层
 
+重构前受 Git 管理且仍有对应 Task 的配置已转换到 `historical/` 命名空间。可通过 `vocoder recipes list` 查看，并参阅[旧配置迁移表](docs/migrated-configs.md)。
+
 配置按 `bases` 从左到右合并，再应用当前文件，最后应用 CLI dotlist。Generator 和 Discriminator 使用 `target + params` 反射配置；其他模块均使用强类型配置和显式注册表。未知字段、循环继承、未解析插值、缺失参数和多余参数都会报错。
 
 一次完整 recipe iteration 记为一个 `logical_step`。Checkpoint 另外记录每个 optimizer 的 attempted/successful updates，因此 step 不再随 G/D optimizer 数量翻倍。
@@ -88,6 +107,7 @@ vocoder export experiments\run\step-00001000.ckpt exports\model.pt
 
 - [架构](docs/architecture.md)
 - [配置与 recipe](docs/configuration.md)
+- [旧配置迁移表](docs/migrated-configs.md)
 - [checkpoint 与恢复](docs/checkpoints.md)
 
 ## 开发检查

@@ -18,6 +18,8 @@ vocoder config validate nsf-hifigan `
 
 `config validate` also constructs the complete reflective component graph, so invalid constructor parameters and contract violations are detected before training.
 
+Built-in names may contain a namespace, for example `historical/ft-hifigan`. Recipe discovery and resolution are recursive, while internal files whose names begin with `_` remain hidden. See [Migrated configurations](migrated-configs.md) for the mapping from pre-refactor files.
+
 ## Reflective model parameters
 
 Generator and Discriminator use a common specification:
