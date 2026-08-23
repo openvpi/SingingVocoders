@@ -9,7 +9,6 @@ model:
       hop_size: ${data.features.hop_size}
       win_size: ${data.features.win_size}
       type: CombSub
-      use_mean_filter: true
       n_mag_harmonic: 512
       n_mag_noise: 256
   discriminators:
