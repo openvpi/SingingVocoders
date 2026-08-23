@@ -15,7 +15,9 @@ objective:
 optimization:
   name: joint
   joint:
-    optimizer:
-      name: adamw
-      lr: 0.0001
-      betas: [0.5, 0.99]
+    optimizers:
+      - parameters: all
+        optimizer:
+          name: adamw
+          lr: 0.0001
+          betas: [0.5, 0.99]

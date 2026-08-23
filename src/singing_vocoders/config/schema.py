@@ -203,26 +203,16 @@ class AdamWConfig(StrictModel):
         return self
 
 
-class MuonAdamWConfig(StrictModel):
-    name: Literal["muon_adamw"] = "muon_adamw"
+class MuonConfig(StrictModel):
+    name: Literal["muon"] = "muon"
     lr: float = Field(default=5e-4, gt=0)
     weight_decay: float = Field(default=0.0, ge=0)
     momentum: float = Field(default=0.95, ge=0, lt=1)
     nesterov: bool = True
     ns_steps: PositiveInt = 5
-    adamw_lr: float = Field(default=5e-4, gt=0)
-    adamw_betas: tuple[float, float] = (0.9, 0.95)
-    adamw_eps: float = Field(default=1e-8, gt=0)
-    adamw_weight_decay: float = Field(default=0.0, ge=0)
-
-    @model_validator(mode="after")
-    def validate_adamw_betas(self) -> MuonAdamWConfig:
-        if any(beta < 0 or beta >= 1 for beta in self.adamw_betas):
-            raise ValueError("Muon AdamW betas must be in the range [0, 1)")
-        return self
 
 
-OptimizerConfig = Annotated[AdamWConfig | MuonAdamWConfig, Field(discriminator="name")]
+OptimizerConfig = Annotated[AdamWConfig | MuonConfig, Field(discriminator="name")]
 
 
 class ExponentialSchedulerConfig(StrictModel):
@@ -233,12 +223,35 @@ class ExponentialSchedulerConfig(StrictModel):
 SchedulerConfig = ExponentialSchedulerConfig
 
 
-class OptimizerSlotConfig(StrictModel):
+class OptimizerRouteConfig(StrictModel):
+    parameters: Literal["all", "muon", "remaining"]
     optimizer: OptimizerConfig
     scheduler: SchedulerConfig | None = None
+
+
+class OptimizerSlotConfig(StrictModel):
+    optimizers: tuple[OptimizerRouteConfig, ...] = Field(min_length=1)
     frequency: PositiveInt = 1
     accumulate: PositiveInt = 1
     clip_grad_norm: float | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def validate_parameter_routes(self) -> OptimizerSlotConfig:
+        selectors = [route.parameters for route in self.optimizers]
+        if len(selectors) != len(set(selectors)):
+            raise ValueError("optimizer parameter routes must be unique")
+        if len(selectors) == 1 and selectors[0] != "all":
+            raise ValueError("a single optimizer must use the all parameter route")
+        if len(selectors) > 1 and set(selectors) != {"muon", "remaining"}:
+            raise ValueError("multiple optimizers must use the muon and remaining parameter routes")
+        for route in self.optimizers:
+            if route.parameters == "muon" and not isinstance(route.optimizer, MuonConfig):
+                raise ValueError("the muon parameter route requires the Muon optimizer")
+            if route.parameters in {"all", "remaining"} and not isinstance(
+                route.optimizer, AdamWConfig
+            ):
+                raise ValueError(f"the {route.parameters} parameter route requires AdamW")
+        return self
 
 
 class AlternatingPlanConfig(StrictModel):

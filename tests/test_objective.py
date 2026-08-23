@@ -211,8 +211,12 @@ def test_pitch_consistency_stage_builds_composite_fake_and_reconstruction_batche
             "objective": {"name": "hifigan"},
             "optimization": {
                 "name": "alternating",
-                "generator": {"optimizer": {"name": "adamw"}},
-                "discriminator": {"optimizer": {"name": "adamw"}},
+                "generator": {
+                    "optimizers": [{"parameters": "all", "optimizer": {"name": "adamw"}}]
+                },
+                "discriminator": {
+                    "optimizers": [{"parameters": "all", "optimizer": {"name": "adamw"}}]
+                },
             },
         }
     )
@@ -257,8 +261,12 @@ def test_zero_pitch_consistency_probability_skips_augmentation() -> None:
             "objective": {"name": "hifigan"},
             "optimization": {
                 "name": "alternating",
-                "generator": {"optimizer": {"name": "adamw"}},
-                "discriminator": {"optimizer": {"name": "adamw"}},
+                "generator": {
+                    "optimizers": [{"parameters": "all", "optimizer": {"name": "adamw"}}]
+                },
+                "discriminator": {
+                    "optimizers": [{"parameters": "all", "optimizer": {"name": "adamw"}}]
+                },
             },
         }
     )
@@ -303,8 +311,12 @@ def test_pitch_consistency_restores_original_order_for_feature_matching(
             "objective": {"name": "hifigan"},
             "optimization": {
                 "name": "alternating",
-                "generator": {"optimizer": {"name": "adamw"}},
-                "discriminator": {"optimizer": {"name": "adamw"}},
+                "generator": {
+                    "optimizers": [{"parameters": "all", "optimizer": {"name": "adamw"}}]
+                },
+                "discriminator": {
+                    "optimizers": [{"parameters": "all", "optimizer": {"name": "adamw"}}]
+                },
             },
         }
     )

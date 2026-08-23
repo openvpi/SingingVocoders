@@ -36,9 +36,14 @@ Objectives expose auxiliary, discriminator, generator, and joint losses. They do
 
 1. `alternating`: detached fake audio for D, then frozen D parameters with connected fake audio for G.
 2. `warmup_alternating`: generator auxiliary updates until `aux_steps`, then the alternating protocol.
-3. `joint`: one optimizer updates the combined G/D graph for the one-step objective.
+3. `joint`: one optimization phase updates the combined G/D graph for the one-step objective.
 
-Each optimizer slot independently controls frequency, accumulation, clipping, optimizer, and scheduler. During accumulation, `Fabric.no_backward_sync` suppresses premature DDP synchronization. A checkpoint may only be written when every optimizer is at an accumulation boundary.
+Each phase independently controls frequency, accumulation, and clipping. A phase owns one or more
+explicit parameter routes, and every route creates an ordinary standalone optimizer with its own
+scheduler and checkpoint state. This keeps Muon and AdamW implementations independent while the
+engine owns routing and their shared backward/step boundary. During accumulation,
+`Fabric.no_backward_sync` suppresses premature DDP synchronization. A checkpoint may only be written
+when every phase is at an accumulation boundary.
 
 One completed recipe iteration increments `logical_step` once. Each optimizer separately records micro steps, attempted updates, and successful updates. AMP overflow therefore does not corrupt the logical clock or masquerade as a successful optimizer update.
 

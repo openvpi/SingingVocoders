@@ -20,6 +20,7 @@ from torch import Tensor
 
 from singing_vocoders.config.schema import WarmupAlternatingPlanConfig
 from singing_vocoders.engine.engine import FabricGanEngine
+from singing_vocoders.engine.muon import Muon
 from singing_vocoders.task.task import VocoderTask
 
 CHECKPOINT_FORMAT_VERSION = 1
@@ -365,7 +366,7 @@ def _validate_torch_optimizer_state(
     parameter_groups: list[list[Tensor]],
     label: str,
     *,
-    state_kind: Literal["adamw", "muon", "outer"],
+    state_kind: Literal["adamw", "muon"],
     allow_scheduled_lr: bool,
     successful_updates: int,
 ) -> None:
@@ -424,8 +425,6 @@ def _validate_torch_optimizer_state(
         for parameter_id in saved_state
     ):
         raise ValueError(f"checkpoint {label} state references an unknown parameter")
-    if state_kind == "outer" and saved_state:
-        raise ValueError(f"checkpoint {label} outer optimizer state must be empty")
     for parameter_id, state in saved_state.items():
         if not isinstance(state, dict):
             raise TypeError(f"checkpoint {label} per-parameter state must be a mapping")
@@ -435,8 +434,6 @@ def _validate_torch_optimizer_state(
                 required_fields.add("max_exp_avg_sq")
         elif state_kind == "muon":
             required_fields = {"momentum_buffer"}
-        else:
-            required_fields = set()
         if set(state) != required_fields:
             raise ValueError(f"checkpoint {label} optimizer state fields do not match")
         parameter = parameters_by_id[parameter_id]
@@ -490,48 +487,29 @@ def _validate_optimizer_state(
     if not callable(state_dict):
         raise TypeError(f"live optimizer state is unavailable for {label}")
     expected = cast(dict[str, Any], state_dict())
-    if set(expected) == {"state", "param_groups"}:
-        _validate_torch_optimizer_state(
-            expected,
-            saved,
-            _parameter_groups(raw_optimizer),
-            label,
-            state_kind="adamw",
-            allow_scheduled_lr=allow_scheduled_lr,
-            successful_updates=successful_updates,
-        )
-        return
-    if set(saved) != set(expected) or expected.get("format_version") != saved.get("format_version"):
+    if set(expected) != {"state", "param_groups"}:
         raise ValueError(f"checkpoint {label} optimizer format does not match")
-    for partition in ("outer", "muon", "adamw"):
-        expected_partition = expected.get(partition)
-        saved_partition = saved.get(partition)
-        if (expected_partition is None) != (saved_partition is None):
-            raise ValueError(f"checkpoint {label} {partition} partition does not match")
-        if expected_partition is not None:
-            if not isinstance(expected_partition, dict) or not isinstance(saved_partition, dict):
-                raise TypeError(f"checkpoint {label} {partition} state must be a mapping")
-            partition_optimizer = (
-                raw_optimizer if partition == "outer" else getattr(raw_optimizer, partition, None)
-            )
-            if partition_optimizer is None:
-                raise ValueError(f"live {label} {partition} optimizer partition is missing")
-            _validate_torch_optimizer_state(
-                expected_partition,
-                saved_partition,
-                _parameter_groups(partition_optimizer),
-                f"{label}.{partition}",
-                state_kind=partition,
-                allow_scheduled_lr=allow_scheduled_lr,
-                successful_updates=successful_updates,
-            )
+    if isinstance(raw_optimizer, Muon):
+        state_kind: Literal["adamw", "muon"] = "muon"
+    elif isinstance(raw_optimizer, torch.optim.AdamW):
+        state_kind = "adamw"
+    else:
+        raise TypeError(f"unsupported live optimizer for {label}: {type(raw_optimizer).__name__}")
+    _validate_torch_optimizer_state(
+        expected,
+        saved,
+        _parameter_groups(raw_optimizer),
+        label,
+        state_kind=state_kind,
+        allow_scheduled_lr=allow_scheduled_lr,
+        successful_updates=successful_updates,
+    )
 
 
 def _outer_optimizer_groups(saved: dict[str, Any], label: str) -> list[dict[str, Any]]:
-    state = saved.get("outer", saved)
-    if not isinstance(state, dict) or not isinstance(state.get("param_groups"), list):
+    if not isinstance(saved.get("param_groups"), list):
         raise TypeError(f"checkpoint {label} optimizer parameter groups are invalid")
-    groups = state["param_groups"]
+    groups = saved["param_groups"]
     if not all(isinstance(group, dict) for group in groups):
         raise TypeError(f"checkpoint {label} optimizer parameter groups are invalid")
     return cast(list[dict[str, Any]], groups)
@@ -591,13 +569,14 @@ def _validate_engine_state(saved: dict[str, Any], engine: FabricGanEngine) -> No
         if not isinstance(saved[field], int) or isinstance(saved[field], bool) or saved[field] < 0:
             raise ValueError(f"checkpoint engine {field} must be a non-negative integer")
     optimizers = saved["optimizers"]
-    if not isinstance(optimizers, dict) or set(optimizers) != set(engine.slots):
-        raise ValueError("checkpoint optimizer slots do not match")
+    if not isinstance(optimizers, dict) or set(optimizers) != set(engine.optimizers):
+        raise ValueError("checkpoint optimizers do not match")
     logical_step = saved["logical_step"]
     if saved["epoch"] > logical_step or saved["batches_in_epoch"] > logical_step:
         raise ValueError("checkpoint epoch position exceeds its logical step")
     plan = engine.raw_task.config.optimization
-    for name, slot in engine.slots.items():
+    for name, optimizer in engine.optimizers.items():
+        phase = engine.phases[optimizer.phase]
         counters = optimizers[name]
         if not isinstance(counters, dict) or set(counters) != {
             "attempted_updates",
@@ -614,22 +593,22 @@ def _validate_engine_state(saved: dict[str, Any], engine: FabricGanEngine) -> No
             raise ValueError(f"checkpoint successful updates exceed attempts for {name}")
         start = (
             plan.aux_steps
-            if isinstance(plan, WarmupAlternatingPlanConfig) and name == "discriminator"
+            if isinstance(plan, WarmupAlternatingPlanConfig) and optimizer.phase == "discriminator"
             else 0
         )
-        first_step = ((start + slot.config.frequency - 1) // slot.config.frequency) * (
-            slot.config.frequency
+        first_step = ((start + phase.config.frequency - 1) // phase.config.frequency) * (
+            phase.config.frequency
         )
         expected_micro_steps = (
             0
             if first_step >= logical_step
-            else (logical_step - 1 - first_step) // slot.config.frequency + 1
+            else (logical_step - 1 - first_step) // phase.config.frequency + 1
         )
         if counters["micro_steps"] != expected_micro_steps:
             raise ValueError(f"checkpoint optimizer micro-step count does not match for {name}")
-        if counters["attempted_updates"] != expected_micro_steps // slot.config.accumulate:
+        if counters["attempted_updates"] != expected_micro_steps // phase.config.accumulate:
             raise ValueError(f"checkpoint optimizer attempt count does not match for {name}")
-        if counters["micro_steps"] % slot.config.accumulate != 0:
+        if counters["micro_steps"] % phase.config.accumulate != 0:
             raise ValueError(f"checkpoint optimizer {name} is not at an accumulation boundary")
 
 
@@ -645,29 +624,29 @@ def _preflight_restore(
     if not isinstance(saved_engine_state, dict):
         raise TypeError("checkpoint engine state must be a mapping")
     _validate_engine_state(saved_engine_state, engine)
-    for name, slot in engine.slots.items():
+    for name, optimizer in engine.optimizers.items():
         optimizer_state = metadata.get(f"optimizer_{name}")
         optimizer_counters = cast(dict[str, Any], saved_engine_state["optimizers"])[name]
         _validate_optimizer_state(
-            slot.optimizer,
+            optimizer.optimizer,
             optimizer_state,
             name,
-            allow_scheduled_lr=slot.scheduler is not None,
+            allow_scheduled_lr=optimizer.scheduler is not None,
             successful_updates=optimizer_counters["successful_updates"],
         )
         scheduler_key = f"scheduler_{name}"
-        if slot.scheduler is not None:
+        if optimizer.scheduler is not None:
             scheduler_state = metadata.get(scheduler_key)
             if not isinstance(scheduler_state, dict):
                 raise TypeError(f"checkpoint scheduler state is missing for {name}")
             _validate_scheduler_state(
-                slot.scheduler.state_dict(),
+                optimizer.scheduler.state_dict(),
                 scheduler_state,
                 cast(dict[str, Any], optimizer_state),
                 optimizer_counters["successful_updates"],
                 name,
             )
-        if slot.scheduler is None and scheduler_key in metadata:
+        if optimizer.scheduler is None and scheduler_key in metadata:
             raise ValueError(f"checkpoint has an unexpected scheduler for {name}")
     precision_state = metadata.get("precision")
     if not isinstance(precision_state, dict):
@@ -744,10 +723,10 @@ class CheckpointManager:
             "resume_fingerprint": self.resume_fingerprint,
             "data_fingerprint": self.data_fingerprint,
         }
-        for name, slot in engine.slots.items():
-            state[f"optimizer_{name}"] = slot.optimizer
-            if slot.scheduler is not None:
-                state[f"scheduler_{name}"] = slot.scheduler
+        for name, optimizer in engine.optimizers.items():
+            state[f"optimizer_{name}"] = optimizer.optimizer
+            if optimizer.scheduler is not None:
+                state[f"scheduler_{name}"] = optimizer.scheduler
         engine.fabric.save(temporary, state)
         engine.fabric.barrier()
         if engine.fabric.global_rank == 0:
@@ -783,10 +762,10 @@ class CheckpointManager:
             "engine_state": engine.state,
             "precision": engine.fabric.strategy.precision,
         }
-        for name, slot in engine.slots.items():
-            state[f"optimizer_{name}"] = slot.optimizer
-            if slot.scheduler is not None:
-                state[f"scheduler_{name}"] = slot.scheduler
+        for name, optimizer in engine.optimizers.items():
+            state[f"optimizer_{name}"] = optimizer.optimizer
+            if optimizer.scheduler is not None:
+                state[f"scheduler_{name}"] = optimizer.scheduler
         engine.fabric.load(checkpoint_path, state, strict=True, weights_only=True)
         _restore_rng(rng_by_rank[engine.fabric.global_rank])
         _restore_sampler(sampler, saved_sampler, engine)

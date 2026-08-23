@@ -14,12 +14,20 @@ model:
       noise_sigma: 0
 optimization:
   generator:
-    optimizer:
-      lr: 0.00001
+    optimizers:
+      - parameters: all
+        optimizer:
+          name: adamw
+          lr: 0.00001
+          betas: [0.8, 0.99]
     clip_grad_norm: 1
   discriminator:
-    optimizer:
-      lr: 0.00001
+    optimizers:
+      - parameters: all
+        optimizer:
+          name: adamw
+          lr: 0.00001
+          betas: [0.8, 0.99]
     clip_grad_norm: 1
 runtime:
   validate_every: 2000

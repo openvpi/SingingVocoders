@@ -22,7 +22,7 @@ from singing_vocoders.config.schema import (
     OptimizerSlotConfig,
     WarmupAlternatingPlanConfig,
 )
-from singing_vocoders.engine.optim import build_optimizer
+from singing_vocoders.engine.optim import build_optimizers
 from singing_vocoders.task.augmentation import GeneratorStage
 from singing_vocoders.task.task import VocoderTask
 
@@ -73,19 +73,37 @@ class EngineState:
 @dataclass(slots=True)
 class OptimizerRuntime:
     name: str
-    config: OptimizerSlotConfig
+    phase: str
     optimizer: Optimizer
     scheduler: LRScheduler | None
     state: OptimizerState
+
+
+@dataclass(slots=True)
+class OptimizationPhaseRuntime:
+    name: str
+    config: OptimizerSlotConfig
+    optimizers: list[OptimizerRuntime]
     module: nn.Module | None = None
 
     @property
     def boundary(self) -> bool:
-        return (self.state.micro_steps + 1) % self.config.accumulate == 0
+        return (self.micro_steps + 1) % self.config.accumulate == 0
 
     @property
     def cycle_start(self) -> bool:
-        return self.state.micro_steps % self.config.accumulate == 0
+        return self.micro_steps % self.config.accumulate == 0
+
+    @property
+    def micro_steps(self) -> int:
+        values = {optimizer.state.micro_steps for optimizer in self.optimizers}
+        if len(values) != 1:
+            raise RuntimeError(f"optimizer routes are out of sync in phase {self.name}")
+        return next(iter(values))
+
+    def zero_grad(self) -> None:
+        for optimizer in self.optimizers:
+            optimizer.optimizer.zero_grad(set_to_none=True)
 
 
 @contextmanager
@@ -183,7 +201,8 @@ class FabricGanEngine:
         self.raw_task = task
         self.task = task
         self.state = EngineState()
-        self.slots = self._build_optimizers(task)
+        self.optimizers: dict[str, OptimizerRuntime] = {}
+        self.phases = self._build_optimizers(task)
         self._raw_discriminator = _DiscriminatorEnsemble(task.discriminator)
         self.generator: nn.Module | None = None
         self.discriminator: nn.Module | None = None
@@ -192,7 +211,7 @@ class FabricGanEngine:
         self._setup_modules(task)
         task.objective.to(fabric.device)
 
-    def _build_optimizers(self, task: VocoderTask) -> dict[str, OptimizerRuntime]:
+    def _build_optimizers(self, task: VocoderTask) -> dict[str, OptimizationPhaseRuntime]:
         plan = task.config.optimization
         definitions: list[tuple[str, OptimizerSlotConfig, nn.Module]]
         if isinstance(plan, (AlternatingPlanConfig, WarmupAlternatingPlanConfig)):
@@ -204,27 +223,48 @@ class FabricGanEngine:
             definitions = [("joint", plan.joint, task)]
         else:
             raise TypeError(f"unsupported optimization plan: {type(plan).__name__}")
-        slots: dict[str, OptimizerRuntime] = {}
-        for name, config, module in definitions:
-            built = build_optimizer(config, module)
-            state = OptimizerState()
-            self.state.optimizers[name] = state
-            slots[name] = OptimizerRuntime(
-                name=name,
+        phases: dict[str, OptimizationPhaseRuntime] = {}
+        for phase_name, config, module in definitions:
+            built_optimizers = build_optimizers(config, module)
+            route_runtimes: list[OptimizerRuntime] = []
+            multiple_routes = len(built_optimizers) > 1
+            for built in built_optimizers:
+                name = f"{phase_name}.{built.route.parameters}" if multiple_routes else phase_name
+                state = OptimizerState()
+                self.state.optimizers[name] = state
+                runtime = OptimizerRuntime(
+                    name=name,
+                    phase=phase_name,
+                    optimizer=built.optimizer,
+                    scheduler=built.scheduler,
+                    state=state,
+                )
+                route_runtimes.append(runtime)
+                self.optimizers[name] = runtime
+            phases[phase_name] = OptimizationPhaseRuntime(
+                name=phase_name,
                 config=config,
-                optimizer=built.optimizer,
-                scheduler=built.scheduler,
-                state=state,
+                optimizers=route_runtimes,
             )
-        return slots
+        return phases
 
-    def _setup_one(self, module: nn.Module, slot: OptimizerRuntime) -> nn.Module:
-        setup = self.fabric.setup(module, slot.optimizer)
+    def _setup_one(self, module: nn.Module, phase: OptimizationPhaseRuntime) -> nn.Module:
+        setup = self.fabric.setup(
+            module,
+            *(optimizer.optimizer for optimizer in phase.optimizers),
+        )
         if not isinstance(setup, tuple):
-            raise RuntimeError("Fabric did not return the configured optimizer")
-        configured_module, configured_optimizer = setup
-        slot.optimizer = cast(Optimizer, configured_optimizer)
-        slot.module = configured_module
+            raise RuntimeError("Fabric did not return the configured optimizers")
+        configured_module, *configured_optimizers = setup
+        if len(configured_optimizers) != len(phase.optimizers):
+            raise RuntimeError("Fabric returned an unexpected optimizer count")
+        for runtime, configured_optimizer in zip(
+            phase.optimizers,
+            configured_optimizers,
+            strict=True,
+        ):
+            runtime.optimizer = cast(Optimizer, configured_optimizer)
+        phase.module = configured_module
         return cast(nn.Module, configured_module)
 
     def _setup_modules(self, task: VocoderTask) -> None:
@@ -232,12 +272,15 @@ class FabricGanEngine:
         if isinstance(plan, JointPlanConfig):
             joint_module = _JointTrainingModule(task)
             self._joint_generator = joint_module.generator
-            self.joint_module = self._setup_one(joint_module, self.slots["joint"])
+            self.joint_module = self._setup_one(joint_module, self.phases["joint"])
             return
         self.generator = self._setup_one(
-            GeneratorStage(task.generator, task.config), self.slots["generator"]
+            GeneratorStage(task.generator, task.config), self.phases["generator"]
         )
-        self.discriminator = self._setup_one(self._raw_discriminator, self.slots["discriminator"])
+        self.discriminator = self._setup_one(
+            self._raw_discriminator,
+            self.phases["discriminator"],
+        )
 
     @contextmanager
     def _frozen_discriminators(self) -> Iterator[None]:
@@ -296,7 +339,7 @@ class FabricGanEngine:
 
     def _rescale_pending_gradients(
         self,
-        stepped_slot: OptimizerRuntime,
+        stepped_phase: OptimizationPhaseRuntime,
         scale_before: float | None,
         scale_after: float | None,
     ) -> None:
@@ -309,21 +352,22 @@ class FabricGanEngine:
         ):
             return
         factor = scale_after / scale_before
-        for slot in self.slots.values():
-            if slot is stepped_slot or slot.state.micro_steps % slot.config.accumulate == 0:
+        for phase in self.phases.values():
+            if phase is stepped_phase or phase.micro_steps % phase.config.accumulate == 0:
                 continue
-            for parameter_group in slot.optimizer.param_groups:
-                for parameter in parameter_group["params"]:
-                    if parameter.grad is not None:
-                        parameter.grad.mul_(factor)
+            for optimizer in phase.optimizers:
+                for parameter_group in optimizer.optimizer.param_groups:
+                    for parameter in parameter_group["params"]:
+                        if parameter.grad is not None:
+                            parameter.grad.mul_(factor)
 
     @contextmanager
-    def _optimization_context(self, slot: OptimizerRuntime) -> Iterator[None]:
-        if slot.module is None:
-            raise RuntimeError(f"optimizer module is not configured: {slot.name}")
-        if slot.cycle_start:
-            slot.optimizer.zero_grad(set_to_none=True)
-        with self.fabric.no_backward_sync(cast(Any, slot.module), enabled=not slot.boundary):
+    def _optimization_context(self, phase: OptimizationPhaseRuntime) -> Iterator[None]:
+        if phase.module is None:
+            raise RuntimeError(f"optimization phase module is not configured: {phase.name}")
+        if phase.cycle_start:
+            phase.zero_grad()
+        with self.fabric.no_backward_sync(cast(Any, phase.module), enabled=not phase.boundary):
             yield
 
     @staticmethod
@@ -335,26 +379,26 @@ class FabricGanEngine:
             )
 
     @staticmethod
-    def _gradient_component(slot: OptimizerRuntime, parameter_name: str) -> str:
+    def _gradient_component(phase: OptimizationPhaseRuntime, parameter_name: str) -> str:
         parts = parameter_name.split(".")
         if "components" in parts:
             index = parts.index("components")
             if index + 1 < len(parts):
                 return f"discriminator.{parts[index + 1]}"
-        if "generator" in parts or slot.name == "generator":
+        if "generator" in parts or phase.name == "generator":
             return "generator"
-        return slot.name
+        return phase.name
 
     @classmethod
     def _ensure_finite_gradients(
         cls,
-        slot: OptimizerRuntime,
+        phase_runtime: OptimizationPhaseRuntime,
         phase: str,
         batch: Batch,
     ) -> None:
-        if slot.module is None:
-            raise RuntimeError(f"optimizer module is not configured: {slot.name}")
-        for parameter_name, parameter in slot.module.named_parameters():
+        if phase_runtime.module is None:
+            raise RuntimeError(f"optimization phase module is not configured: {phase_runtime.name}")
+        for parameter_name, parameter in phase_runtime.module.named_parameters():
             gradient = parameter.grad
             if gradient is None:
                 continue
@@ -362,57 +406,97 @@ class FabricGanEngine:
             if torch.isfinite(values).all():
                 continue
             item = batch.metadata[0].get("item", "unknown") if batch.metadata else "unknown"
-            component = cls._gradient_component(slot, parameter_name)
+            component = cls._gradient_component(phase_runtime, parameter_name)
             raise FloatingPointError(
                 f"non-finite gradient in {phase} component {component} "
                 f"parameter {parameter_name} at item {item}"
             )
 
+    @staticmethod
+    def _raw_optimizer(optimizer: OptimizerRuntime) -> Optimizer:
+        return cast(Optimizer, getattr(optimizer.optimizer, "optimizer", optimizer.optimizer))
+
+    @staticmethod
+    def _gradients_are_finite(phase: OptimizationPhaseRuntime) -> bool:
+        if phase.module is None:
+            raise RuntimeError(f"optimization phase module is not configured: {phase.name}")
+        for parameter in phase.module.parameters():
+            gradient = parameter.grad
+            if gradient is None:
+                continue
+            values = gradient.coalesce().values() if gradient.is_sparse else gradient
+            if not torch.isfinite(values).all():
+                return False
+        return True
+
     def _backward_and_maybe_step(
-        self, slot: OptimizerRuntime, loss: Tensor, phase: str, batch: Batch
+        self,
+        phase_runtime: OptimizationPhaseRuntime,
+        loss: Tensor,
+        phase: str,
+        batch: Batch,
     ) -> bool:
         self._ensure_finite_loss(loss, phase, batch)
-        if slot.module is None:
-            raise RuntimeError(f"optimizer module is not configured: {slot.name}")
-        should_step = slot.boundary
-        self.fabric.backward(loss / slot.config.accumulate)
+        if phase_runtime.module is None:
+            raise RuntimeError(f"optimization phase module is not configured: {phase_runtime.name}")
+        should_step = phase_runtime.boundary
+        self.fabric.backward(loss / phase_runtime.config.accumulate)
         uses_gradient_scaler = self._scaler_scale() is not None
         if not uses_gradient_scaler:
-            self._ensure_finite_gradients(slot, phase, batch)
-        slot.state.micro_steps += 1
+            self._ensure_finite_gradients(phase_runtime, phase, batch)
+        for optimizer in phase_runtime.optimizers:
+            optimizer.state.micro_steps += 1
         if not should_step:
             return False
-        slot.state.attempted_updates += 1
-        try:
-            self.fabric.clip_gradients(
-                slot.module,
-                slot.optimizer,
-                max_norm=(
-                    slot.config.clip_grad_norm
-                    if slot.config.clip_grad_norm is not None
-                    else float("inf")
-                ),
-                error_if_nonfinite=not uses_gradient_scaler,
-            )
-        except RuntimeError as error:
-            if "non-finite" not in str(error):
-                raise
-            item = batch.metadata[0].get("item", "unknown") if batch.metadata else "unknown"
-            raise FloatingPointError(f"non-finite gradient in {phase} at item {item}") from error
-        scale_before = self._scaler_scale()
-        slot.optimizer.step()
-        scale_after = self._scaler_scale()
-        self._rescale_pending_gradients(slot, scale_before, scale_after)
-        succeeded = scale_before is None or scale_after is None or scale_after >= scale_before
+        for optimizer in phase_runtime.optimizers:
+            optimizer.state.attempted_updates += 1
+
+        if uses_gradient_scaler:
+            precision = self.fabric.strategy.precision
+            scale_before = self._scaler_scale()
+            for optimizer in phase_runtime.optimizers:
+                precision.unscale_gradients(self._raw_optimizer(optimizer))
+            succeeded = self._gradients_are_finite(phase_runtime)
+            if succeeded:
+                torch.nn.utils.clip_grad_norm_(
+                    phase_runtime.module.parameters(),
+                    max_norm=(
+                        phase_runtime.config.clip_grad_norm
+                        if phase_runtime.config.clip_grad_norm is not None
+                        else float("inf")
+                    ),
+                    error_if_nonfinite=True,
+                )
+                for optimizer in phase_runtime.optimizers:
+                    self._raw_optimizer(optimizer).step()
+            scaler = getattr(precision, "scaler", None)
+            if scaler is None:
+                raise RuntimeError("mixed precision scaler disappeared during optimizer step")
+            scaler.update()
+            scale_after = self._scaler_scale()
+            self._rescale_pending_gradients(phase_runtime, scale_before, scale_after)
+        else:
+            succeeded = True
+            if phase_runtime.config.clip_grad_norm is not None:
+                self.fabric.clip_gradients(
+                    phase_runtime.module,
+                    phase_runtime.optimizers[0].optimizer,
+                    max_norm=phase_runtime.config.clip_grad_norm,
+                    error_if_nonfinite=True,
+                )
+            for optimizer in phase_runtime.optimizers:
+                optimizer.optimizer.step()
+
         if succeeded:
-            slot.state.successful_updates += 1
-            if slot.scheduler is not None:
-                slot.scheduler.step()
-        slot.optimizer.zero_grad(set_to_none=True)
+            for optimizer in phase_runtime.optimizers:
+                optimizer.state.successful_updates += 1
+                if optimizer.scheduler is not None:
+                    optimizer.scheduler.step()
+        phase_runtime.zero_grad()
         return succeeded
 
     def _run_generator_phase(
-        self, batch: Batch, generated: GeneratorOutput, slot: OptimizerRuntime
+        self, batch: Batch, generated: GeneratorOutput, phase: OptimizationPhaseRuntime
     ) -> dict[str, Tensor]:
         with self._frozen_discriminators():
             with torch.no_grad():
@@ -421,28 +505,28 @@ class FabricGanEngine:
             result = self.raw_task.objective.generator_loss(
                 batch, generated, real, fake, self.state.logical_step
             )
-        self._backward_and_maybe_step(slot, result.loss, "generator", batch)
+        self._backward_and_maybe_step(phase, result.loss, "generator", batch)
         return result.metrics
 
     def _run_discriminator_phase(
-        self, batch: Batch, generated: GeneratorOutput, slot: OptimizerRuntime
+        self, batch: Batch, generated: GeneratorOutput, phase: OptimizationPhaseRuntime
     ) -> dict[str, Tensor]:
         if self.discriminator is None:
             raise RuntimeError("separate discriminator is unavailable for a joint plan")
-        with self._optimization_context(slot):
+        with self._optimization_context(phase):
             output = self.discriminator(batch.audio, generated.audio.detach())
             if not isinstance(output, tuple) or len(output) != 2:
                 raise TypeError("discriminator ensemble returned an invalid output")
             real, fake = output
             result = self.raw_task.objective.discriminator_loss(real, fake)
-            self._backward_and_maybe_step(slot, result.loss, "discriminator", batch)
+            self._backward_and_maybe_step(phase, result.loss, "discriminator", batch)
         return result.metrics
 
     def _run_joint_phase(self, batch: Batch) -> tuple[GeneratorOutput, dict[str, Tensor]]:
         if self.joint_module is None:
             raise RuntimeError("joint module is unavailable for an alternating plan")
-        slot = self.slots["joint"]
-        with self._optimization_context(slot):
+        phase = self.phases["joint"]
+        with self._optimization_context(phase):
             output = self.joint_module(batch)
             if not isinstance(output, JointForwardOutput):
                 raise TypeError("joint module returned an invalid output")
@@ -454,14 +538,14 @@ class FabricGanEngine:
                 output.fake_connected,
                 self.state.logical_step,
             )
-            self._backward_and_maybe_step(slot, result.loss, "joint", batch)
+            self._backward_and_maybe_step(phase, result.loss, "joint", batch)
         return output.generated, result.metrics
 
     def train_step(self, batch: Batch) -> dict[str, Tensor]:
         plan = self.raw_task.config.optimization
         metrics: dict[str, Tensor]
         if isinstance(plan, JointPlanConfig):
-            joint = self.slots["joint"]
+            joint = self.phases["joint"]
             if self.state.logical_step % joint.config.frequency == 0:
                 generated, metrics = self._run_joint_phase(batch)
             else:
@@ -470,8 +554,8 @@ class FabricGanEngine:
                 metrics = {}
         else:
             metrics = {}
-            generator = self.slots["generator"]
-            discriminator = self.slots["discriminator"]
+            generator = self.phases["generator"]
+            discriminator = self.phases["discriminator"]
             if (
                 isinstance(plan, WarmupAlternatingPlanConfig)
                 and self.state.logical_step < plan.aux_steps
@@ -509,12 +593,12 @@ class FabricGanEngine:
                         )
         self.state.logical_step += 1
         metrics["steps/logical"] = generated.audio.new_tensor(float(self.state.logical_step))
-        for name, slot in self.slots.items():
+        for name, optimizer in self.optimizers.items():
             metrics[f"steps/{name}/attempted"] = generated.audio.new_tensor(
-                float(slot.state.attempted_updates)
+                float(optimizer.state.attempted_updates)
             )
             metrics[f"steps/{name}/successful"] = generated.audio.new_tensor(
-                float(slot.state.successful_updates)
+                float(optimizer.state.successful_updates)
             )
         return metrics
 
@@ -622,5 +706,5 @@ class FabricGanEngine:
 
     def accumulation_boundary(self) -> bool:
         return all(
-            slot.state.micro_steps % slot.config.accumulate == 0 for slot in self.slots.values()
+            phase.micro_steps % phase.config.accumulate == 0 for phase in self.phases.values()
         )

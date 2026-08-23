@@ -66,11 +66,15 @@ def config() -> RecipeConfig:
             "optimization": {
                 "name": "alternating",
                 "generator": {
-                    "optimizer": {"name": "adamw", "lr": 0.001},
+                    "optimizers": [
+                        {"parameters": "all", "optimizer": {"name": "adamw", "lr": 0.001}}
+                    ],
                     "accumulate": 2,
                 },
                 "discriminator": {
-                    "optimizer": {"name": "adamw", "lr": 0.001},
+                    "optimizers": [
+                        {"parameters": "all", "optimizer": {"name": "adamw", "lr": 0.001}}
+                    ],
                     "accumulate": 2,
                 },
             },

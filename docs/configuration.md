@@ -68,25 +68,36 @@ data:
 
 ## Optimization plans
 
-Alternating slots may use `adamw` or `muon_adamw` and optionally an exponential scheduler:
+Each optimization phase declares one or more parameter routes. AdamW can own all parameters, or a
+Muon route can be paired with an AdamW route for the remaining parameters. Every optimizer is an
+independent PyTorch optimizer with its own state and optional scheduler:
 
 ```yaml
 optimization:
   name: alternating
   generator:
-    optimizer: {name: adamw, lr: 0.0001}
+    optimizers:
+      - parameters: all
+        optimizer: {name: adamw, lr: 0.0001}
+        scheduler: null
     frequency: 1
     accumulate: 1
     clip_grad_norm: 1
-    scheduler: null
   discriminator:
-    optimizer: {name: adamw, lr: 0.0001}
+    optimizers:
+      - parameters: muon
+        optimizer: {name: muon, lr: 0.0002}
+      - parameters: remaining
+        optimizer: {name: adamw, lr: 0.0002}
     frequency: 1
     accumulate: 1
     clip_grad_norm: 1
-    scheduler: null
 ```
 
-Muon+AdamW sends trainable two-dimensional matrix parameters through Muon and all remaining parameters through AdamW. The partition is stable and included in optimizer checkpoint state.
+The built-in Muon route preserves the original project selection rule: trainable tensors with at
+least two dimensions use Muon, except embeddings and parameters named `weight_g`; all other tensors
+use AdamW. The engine verifies that routes are disjoint and cover every trainable parameter. It runs
+one backward pass for the phase, steps both optimizers at the same accumulation boundary, and saves
+their states separately.
 
 Schedulers default to disabled. Historical WarmupLR fields that were never registered are not inferred or enabled.

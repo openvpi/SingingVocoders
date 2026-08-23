@@ -2,12 +2,16 @@ optimization:
   name: warmup_alternating
   aux_steps: 400000
   generator:
-    optimizer:
-      name: adamw
-      lr: 0.0002
-      betas: [0.8, 0.99]
+    optimizers:
+      - parameters: all
+        optimizer:
+          name: adamw
+          lr: 0.0002
+          betas: [0.8, 0.99]
   discriminator:
-    optimizer:
-      name: adamw
-      lr: 0.0002
-      betas: [0.8, 0.99]
+    optimizers:
+      - parameters: all
+        optimizer:
+          name: adamw
+          lr: 0.0002
+          betas: [0.8, 0.99]

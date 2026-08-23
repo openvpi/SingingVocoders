@@ -17,9 +17,10 @@ from singing_vocoders.components import (
     GeneratorComponent,
     GeneratorOutput,
 )
-from singing_vocoders.config.schema import RecipeConfig
+from singing_vocoders.config.schema import OptimizerSlotConfig, RecipeConfig
 from singing_vocoders.engine import FabricGanEngine
-from singing_vocoders.engine.muon import MuonAdamW, zeropower_via_newtonschulz5
+from singing_vocoders.engine.muon import Muon, zeropower_via_newtonschulz5
+from singing_vocoders.engine.optim import build_optimizers
 from singing_vocoders.task import VocoderTask
 from singing_vocoders.task.objective import LossResult
 
@@ -31,6 +32,16 @@ class ScaleGenerator(GeneratorComponent):
 
     def forward(self, batch: Batch) -> GeneratorOutput:
         return GeneratorOutput(batch.audio * self.scale)
+
+
+class RoutedGenerator(GeneratorComponent):
+    def __init__(self) -> None:
+        super().__init__()
+        self.conv = nn.Conv1d(1, 1, 1)
+        self.scale = nn.Parameter(torch.tensor(0.5))
+
+    def forward(self, batch: Batch) -> GeneratorOutput:
+        return GeneratorOutput(self.conv(batch.audio) * self.scale)
 
 
 class TinyDiscriminator(DiscriminatorComponent):
@@ -88,7 +99,7 @@ def _config(
         optimization = {
             "name": "joint",
             "joint": {
-                "optimizer": {"name": "adamw", "lr": 0.001},
+                "optimizers": [{"parameters": "all", "optimizer": {"name": "adamw", "lr": 0.001}}],
                 "accumulate": accumulate,
                 "frequency": generator_frequency,
             },
@@ -97,12 +108,12 @@ def _config(
         optimization = {
             "name": plan,
             "generator": {
-                "optimizer": {"name": "adamw", "lr": 0.001},
+                "optimizers": [{"parameters": "all", "optimizer": {"name": "adamw", "lr": 0.001}}],
                 "accumulate": accumulate,
                 "frequency": generator_frequency,
             },
             "discriminator": {
-                "optimizer": {"name": "adamw", "lr": 0.001},
+                "optimizers": [{"parameters": "all", "optimizer": {"name": "adamw", "lr": 0.001}}],
                 "accumulate": (
                     accumulate if discriminator_accumulate is None else discriminator_accumulate
                 ),
@@ -154,6 +165,23 @@ def _batch() -> Batch:
     )
 
 
+def _routed_config() -> RecipeConfig:
+    raw = _config().model_dump(mode="python")
+    routes = [
+        {
+            "parameters": "muon",
+            "optimizer": {"name": "muon", "lr": 0.001, "ns_steps": 2},
+        },
+        {
+            "parameters": "remaining",
+            "optimizer": {"name": "adamw", "lr": 0.001},
+        },
+    ]
+    raw["optimization"]["generator"]["optimizers"] = routes
+    raw["optimization"]["discriminator"]["optimizers"] = routes
+    return RecipeConfig.model_validate(raw)
+
+
 def test_alternating_plan_counts_one_logical_step_per_batch() -> None:
     registry = ComponentRegistry()
     registry.register("generator", ScaleGenerator)
@@ -164,6 +192,29 @@ def test_alternating_plan_counts_one_logical_step_per_batch() -> None:
     assert engine.state.optimizers["generator"].successful_updates == 1
     assert engine.state.optimizers["discriminator"].successful_updates == 1
     assert torch.isfinite(metrics["loss/generator"])
+
+
+def test_engine_owns_disjoint_muon_and_adamw_routes() -> None:
+    registry = ComponentRegistry()
+    registry.register("generator", RoutedGenerator)
+    registry.register("discriminator", TinyDiscriminator)
+    engine = FabricGanEngine(
+        Fabric(accelerator="cpu", devices=1), VocoderTask(_routed_config(), registry)
+    )
+
+    engine.train_step(_batch())
+
+    assert set(engine.optimizers) == {
+        "generator.muon",
+        "generator.remaining",
+        "discriminator.muon",
+        "discriminator.remaining",
+    }
+    assert isinstance(engine._raw_optimizer(engine.optimizers["generator.muon"]), Muon)
+    assert isinstance(
+        engine._raw_optimizer(engine.optimizers["generator.remaining"]), torch.optim.AdamW
+    )
+    assert all(state.successful_updates == 1 for state in engine.state.optimizers.values())
 
 
 def test_independent_accumulation_defers_optimizer_updates() -> None:
@@ -194,7 +245,7 @@ def test_accumulation_no_sync_covers_forward_and_backward(monkeypatch: pytest.Mo
 
     @contextmanager
     def recording_no_sync(module: nn.Module, *, enabled: bool = True):
-        name = next(name for name, slot in engine.slots.items() if slot.module is module)
+        name = next(name for name, phase in engine.phases.items() if phase.module is module)
         if enabled:
             active.append(name)
         try:
@@ -281,6 +332,32 @@ def test_fp16_scale_growth_rescales_other_optimizer_pending_gradients(
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required for FP16 GradScaler")
+def test_fp16_routed_phase_updates_one_shared_scaler_once() -> None:
+    registry = ComponentRegistry()
+    registry.register("generator", RoutedGenerator)
+    registry.register("discriminator", TinyDiscriminator)
+    task = VocoderTask(_routed_config(), registry)
+    scaler = torch.GradScaler("cuda", init_scale=8, growth_interval=1, growth_factor=2)
+    engine = FabricGanEngine(
+        Fabric(
+            accelerator="cuda",
+            devices=1,
+            plugins=MixedPrecision("16-mixed", "cuda", scaler=scaler),
+        ),
+        task,
+    )
+    phase = engine.phases["generator"]
+    loss = torch.stack([parameter.sum() for parameter in task.generator.parameters()]).sum()
+
+    with engine._optimization_context(phase):
+        succeeded = engine._backward_and_maybe_step(phase, loss, "generator", _batch().to("cuda"))
+
+    assert succeeded
+    assert scaler.get_scale() == 16
+    assert all(optimizer.state.successful_updates == 1 for optimizer in phase.optimizers)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required for FP16 GradScaler")
 def test_fp16_scaled_gradient_overflow_backs_off_without_aborting() -> None:
     registry = ComponentRegistry()
     registry.register("generator", ScaleGenerator)
@@ -293,14 +370,15 @@ def test_fp16_scaled_gradient_overflow_backs_off_without_aborting() -> None:
         plugins=MixedPrecision("16-mixed", "cuda", scaler=scaler),
     )
     engine = FabricGanEngine(fabric, task)
-    slot = engine.slots["generator"]
+    phase = engine.phases["generator"]
+    optimizer = engine.optimizers["generator"]
     batch = _batch().to("cuda")
     parameter = task.generator.scale
     before = parameter.detach().clone()
 
-    with engine._optimization_context(slot):
+    with engine._optimization_context(phase):
         succeeded = engine._backward_and_maybe_step(
-            slot,
+            phase,
             parameter * 1e35,
             "generator",
             batch,
@@ -308,17 +386,17 @@ def test_fp16_scaled_gradient_overflow_backs_off_without_aborting() -> None:
 
     assert not succeeded
     assert scaler.get_scale() == 32_768
-    assert slot.state.attempted_updates == 1
-    assert slot.state.successful_updates == 0
+    assert optimizer.state.attempted_updates == 1
+    assert optimizer.state.successful_updates == 0
     assert torch.equal(parameter, before)
     assert parameter.grad is None
 
-    with engine._optimization_context(slot):
-        succeeded = engine._backward_and_maybe_step(slot, parameter, "generator", batch)
+    with engine._optimization_context(phase):
+        succeeded = engine._backward_and_maybe_step(phase, parameter, "generator", batch)
 
     assert succeeded
-    assert slot.state.attempted_updates == 2
-    assert slot.state.successful_updates == 1
+    assert optimizer.state.attempted_updates == 2
+    assert optimizer.state.successful_updates == 1
     assert not torch.equal(parameter, before)
 
 
@@ -341,11 +419,11 @@ def test_fp16_scale_backoff_rescales_other_optimizer_pending_gradients() -> None
     assert generator_parameter.grad is not None
     pending_gradient = generator_parameter.grad.detach().clone()
 
-    discriminator_slot = engine.slots["discriminator"]
+    discriminator_phase = engine.phases["discriminator"]
     discriminator_parameter = next(task.discriminator.parameters())
-    with engine._optimization_context(discriminator_slot):
+    with engine._optimization_context(discriminator_phase):
         succeeded = engine._backward_and_maybe_step(
-            discriminator_slot,
+            discriminator_phase,
             discriminator_parameter.flatten()[0] * 1e38,
             "discriminator",
             batch,
@@ -672,22 +750,40 @@ def test_muon_newton_schulz_matches_original_implementation() -> None:
     torch.testing.assert_close(actual, expected, atol=1e-7, rtol=1e-6)
 
 
-def test_muon_adamw_partition_and_state_roundtrip() -> None:
+def test_optimizer_routes_partition_parameters_and_restore_independent_state() -> None:
     model = PartitionModel()
-    optimizer = MuonAdamW(
-        model,
-        lr=0.01,
-        weight_decay=0.1,
-        momentum=0.95,
-        nesterov=True,
-        ns_steps=2,
-        adamw_lr=0.001,
-        adamw_betas=(0.9, 0.95),
-        adamw_eps=1e-8,
-        adamw_weight_decay=0,
+    config = OptimizerSlotConfig.model_validate(
+        {
+            "optimizers": [
+                {
+                    "parameters": "muon",
+                    "optimizer": {
+                        "name": "muon",
+                        "lr": 0.01,
+                        "weight_decay": 0.1,
+                        "ns_steps": 2,
+                    },
+                },
+                {
+                    "parameters": "remaining",
+                    "optimizer": {
+                        "name": "adamw",
+                        "lr": 0.001,
+                        "betas": [0.9, 0.95],
+                    },
+                },
+            ]
+        }
     )
-    muon_ids = {id(parameter) for parameter in optimizer.muon_parameters}
-    adamw_ids = {id(parameter) for parameter in optimizer.adamw_parameters}
+    built = build_optimizers(config, model)
+    assert isinstance(built[0].optimizer, Muon)
+    assert isinstance(built[1].optimizer, torch.optim.AdamW)
+    muon_ids = {
+        id(parameter) for group in built[0].optimizer.param_groups for parameter in group["params"]
+    }
+    adamw_ids = {
+        id(parameter) for group in built[1].optimizer.param_groups for parameter in group["params"]
+    }
     assert id(model.linear.weight) in muon_ids
     assert id(model.conv.weight) in muon_ids
     assert id(model.embedding.weight) in adamw_ids
@@ -696,22 +792,12 @@ def test_muon_adamw_partition_and_state_roundtrip() -> None:
     assert muon_ids | adamw_ids == {id(parameter) for parameter in model.parameters()}
     for parameter in model.parameters():
         parameter.grad = torch.randn_like(parameter)
-    optimizer.step()
-    state = optimizer.state_dict()
+    for optimizer in built:
+        optimizer.optimizer.step()
+    states = [optimizer.optimizer.state_dict() for optimizer in built]
 
     restored_model = PartitionModel()
-    restored = MuonAdamW(
-        restored_model,
-        lr=0.01,
-        weight_decay=0.1,
-        momentum=0.95,
-        nesterov=True,
-        ns_steps=2,
-        adamw_lr=0.001,
-        adamw_betas=(0.9, 0.95),
-        adamw_eps=1e-8,
-        adamw_weight_decay=0,
-    )
-    restored.load_state_dict(state)
-    assert restored.state_dict()["muon"]["state"]
-    assert restored.state_dict()["adamw"]["state"]
+    restored = build_optimizers(config, restored_model)
+    for optimizer, state in zip(restored, states, strict=True):
+        optimizer.optimizer.load_state_dict(state)
+        assert optimizer.optimizer.state_dict()["state"]

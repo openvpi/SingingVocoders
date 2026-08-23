@@ -37,18 +37,30 @@ objective:
 optimization:
   name: alternating
   generator:
-    optimizer:
-      name: muon_adamw
-      lr: 0.0002
-      adamw_lr: 0.0002
-      weight_decay: 0.01
+    optimizers:
+      - parameters: muon
+        optimizer:
+          name: muon
+          lr: 0.0002
+          weight_decay: 0.01
+      - parameters: remaining
+        optimizer:
+          name: adamw
+          lr: 0.0002
+          betas: [0.9, 0.999]
     clip_grad_norm: 1
   discriminator:
-    optimizer:
-      name: muon_adamw
-      lr: 0.0002
-      adamw_lr: 0.0002
-      weight_decay: 0.1
+    optimizers:
+      - parameters: muon
+        optimizer:
+          name: muon
+          lr: 0.0002
+          weight_decay: 0.1
+      - parameters: remaining
+        optimizer:
+          name: adamw
+          lr: 0.0002
+          betas: [0.9, 0.999]
     clip_grad_norm: 1
 runtime:
   precision: 16-mixed

@@ -47,6 +47,16 @@ class ScaleGenerator(GeneratorComponent):
         return GeneratorOutput(batch.audio * self.scale)
 
 
+class RoutedScaleGenerator(GeneratorComponent):
+    def __init__(self) -> None:
+        super().__init__()
+        self.conv = nn.Conv1d(1, 1, 1)
+        self.scale = nn.Parameter(torch.tensor(0.5))
+
+    def forward(self, batch: Batch) -> GeneratorOutput:
+        return GeneratorOutput(self.conv(batch.audio) * self.scale)
+
+
 class RandomScaleGenerator(GeneratorComponent):
     def __init__(self) -> None:
         super().__init__()
@@ -106,11 +116,21 @@ def _config(accumulate: int = 1) -> RecipeConfig:
             "optimization": {
                 "name": "alternating",
                 "generator": {
-                    "optimizer": {"name": "adamw", "lr": 0.001},
+                    "optimizers": [
+                        {
+                            "parameters": "all",
+                            "optimizer": {"name": "adamw", "lr": 0.001},
+                        }
+                    ],
                     "accumulate": accumulate,
                 },
                 "discriminator": {
-                    "optimizer": {"name": "adamw", "lr": 0.001},
+                    "optimizers": [
+                        {
+                            "parameters": "all",
+                            "optimizer": {"name": "adamw", "lr": 0.001},
+                        }
+                    ],
                     "accumulate": accumulate,
                 },
             },
@@ -125,6 +145,30 @@ def _engine(config: RecipeConfig | None = None) -> FabricGanEngine:
     return FabricGanEngine(
         Fabric(accelerator="cpu", devices=1), VocoderTask(config or _config(), registry)
     )
+
+
+def _routed_config() -> RecipeConfig:
+    raw = _config().model_dump(mode="python")
+    routes = [
+        {
+            "parameters": "muon",
+            "optimizer": {"name": "muon", "lr": 0.001, "ns_steps": 2},
+        },
+        {
+            "parameters": "remaining",
+            "optimizer": {"name": "adamw", "lr": 0.001},
+        },
+    ]
+    raw["optimization"]["generator"]["optimizers"] = routes
+    raw["optimization"]["discriminator"]["optimizers"] = routes
+    return RecipeConfig.model_validate(raw)
+
+
+def _routed_engine(config: RecipeConfig) -> FabricGanEngine:
+    registry = ComponentRegistry()
+    registry.register("generator", RoutedScaleGenerator)
+    registry.register("discriminator", TinyDiscriminator)
+    return FabricGanEngine(Fabric(accelerator="cpu", devices=1), VocoderTask(config, registry))
 
 
 def _random_engine(config: RecipeConfig) -> FabricGanEngine:
@@ -230,14 +274,14 @@ def test_checkpoint_restores_full_training_state_rng_and_sampler(tmp_path: Path)
     expected_scale = engine.raw_task.generator.scale.detach().clone()
     engine.raw_task.generator.scale.data.fill_(99)
     engine.state.logical_step = 99
-    engine.slots["generator"].optimizer.state.clear()
+    engine.optimizers["generator"].optimizer.state.clear()
     sampler.position = 99
 
     manager.load(engine, path, sampler)
 
     assert engine.state.logical_step == 1
     assert engine.state.optimizers["generator"].successful_updates == 1
-    assert engine.slots["generator"].optimizer.state
+    assert engine.optimizers["generator"].optimizer.state
     assert torch.equal(engine.raw_task.generator.scale, expected_scale)
     assert sampler.position == 3
     assert torch.equal(torch.rand(4), expected_random)
@@ -245,6 +289,32 @@ def test_checkpoint_restores_full_training_state_rng_and_sampler(tmp_path: Path)
     assert checkpoint["format_version"] == 1
     assert "precision" in checkpoint
     assert "optimizer_generator" in checkpoint
+
+
+def test_checkpoint_roundtrips_each_routed_optimizer_independently(tmp_path: Path) -> None:
+    config = _routed_config()
+    source = _routed_engine(config)
+    source.train_step(_batch())
+    expected_model = copy.deepcopy(source.raw_task.state_dict())
+    path = _manager(tmp_path, config).save(source)
+    checkpoint = torch.load(path, map_location="cpu", weights_only=True)
+    optimizer_names = {
+        "generator.muon",
+        "generator.remaining",
+        "discriminator.muon",
+        "discriminator.remaining",
+    }
+    assert {
+        key.removeprefix("optimizer_") for key in checkpoint if key.startswith("optimizer_")
+    } == (optimizer_names)
+
+    target = _routed_engine(config)
+    _manager(tmp_path / "resume", config).load(target, path)
+
+    assert target.state.state_dict() == source.state.state_dict()
+    assert all(target.optimizers[name].optimizer.state for name in optimizer_names)
+    for name, value in expected_model.items():
+        torch.testing.assert_close(target.raw_task.state_dict()[name], value, atol=0, rtol=0)
 
 
 def test_checkpoint_resumes_at_the_next_batch_in_the_same_epoch(tmp_path: Path) -> None:
@@ -377,7 +447,7 @@ def test_checkpoint_preflight_rejects_before_mutating_engine(
     target_sampler = StatefulTestSampler()
     target_sampler.position = 41
     expected_model = copy.deepcopy(target.raw_task.state_dict())
-    expected_optimizer = copy.deepcopy(target.slots["generator"].optimizer.state_dict())
+    expected_optimizer = copy.deepcopy(target.optimizers["generator"].optimizer.state_dict())
 
     with pytest.raises((TypeError, ValueError, RuntimeError)):
         _manager(tmp_path / "target", config).load(target, corrupted_path, target_sampler)
@@ -388,7 +458,7 @@ def test_checkpoint_preflight_rejects_before_mutating_engine(
         torch.equal(value, expected_model[name])
         for name, value in target.raw_task.state_dict().items()
     )
-    assert target.slots["generator"].optimizer.state_dict() == expected_optimizer
+    assert target.optimizers["generator"].optimizer.state_dict() == expected_optimizer
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required for GradScaler state")

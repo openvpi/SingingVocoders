@@ -17,8 +17,8 @@ model:
 objective: {name: hifigan}
 optimization:
   name: alternating
-  generator: {optimizer: {name: adamw}}
-  discriminator: {optimizer: {name: adamw}}
+  generator: {optimizers: [{parameters: all, optimizer: {name: adamw}}]}
+  discriminator: {optimizers: [{parameters: all, optimizer: {name: adamw}}]}
 """
 
 
@@ -90,8 +90,11 @@ def test_all_builtin_recipes_validate() -> None:
     assert loaded["historical/nsf-hifigan-fast"].data.validation_size == 5
     fast_optimization = loaded["historical/nsf-hifigan-fast"].optimization
     assert fast_optimization.name == "alternating"
-    assert fast_optimization.generator.optimizer.name == "muon_adamw"
-    assert fast_optimization.generator.optimizer.adamw_betas == (0.9, 0.999)
+    assert [route.optimizer.name for route in fast_optimization.generator.optimizers] == [
+        "muon",
+        "adamw",
+    ]
+    assert fast_optimization.generator.optimizers[1].optimizer.betas == (0.9, 0.999)
     assert loaded["historical/hifivae"].data.features.num_mels == 192
     assert loaded["historical/base-ddspgan"].data.features.pitch_extractor == "parselmouth"
 
@@ -150,18 +153,23 @@ def test_historical_recipes_preserve_effective_training_values(
     [
         (
             "{name: one_step}",
-            "{name: alternating, generator: {optimizer: {name: adamw}}, "
-            "discriminator: {optimizer: {name: adamw}}}",
+            "{name: alternating, generator: {optimizers: [{parameters: all, optimizer: "
+            "{name: adamw}}]}, discriminator: {optimizers: [{parameters: all, optimizer: "
+            "{name: adamw}}]}}",
         ),
-        ("{name: hifigan}", "{name: joint, joint: {optimizer: {name: adamw}}}"),
+        (
+            "{name: hifigan}",
+            "{name: joint, joint: {optimizers: [{parameters: all, optimizer: {name: adamw}}]}}",
+        ),
     ],
 )
 def test_joint_plan_and_one_step_objective_must_be_paired(
     tmp_path: Path, objective: str, optimization: str
 ) -> None:
     recipe = BASE.replace("{name: hifigan}", objective).replace(
-        "name: alternating\n  generator: {optimizer: {name: adamw}}\n  "
-        "discriminator: {optimizer: {name: adamw}}",
+        "name: alternating\n  generator: {optimizers: [{parameters: all, optimizer: "
+        "{name: adamw}}]}\n  discriminator: {optimizers: [{parameters: all, optimizer: "
+        "{name: adamw}}]}",
         optimization,
     )
     path = tmp_path / "invalid.yaml"
@@ -172,9 +180,10 @@ def test_joint_plan_and_one_step_objective_must_be_paired(
 
 def test_warmup_must_end_at_generator_accumulation_boundary(tmp_path: Path) -> None:
     recipe = BASE.replace(
-        "name: alternating\n  generator: {optimizer: {name: adamw}}",
+        "name: alternating\n  generator: {optimizers: [{parameters: all, optimizer: "
+        "{name: adamw}}]}",
         "name: warmup_alternating\n  aux_steps: 1\n  generator: "
-        "{optimizer: {name: adamw}, accumulate: 2}",
+        "{optimizers: [{parameters: all, optimizer: {name: adamw}}], accumulate: 2}",
     )
     path = tmp_path / "invalid-warmup.yaml"
     path.write_text(recipe, encoding="utf-8")
