@@ -1,0 +1,17 @@
+data:
+  processed_dir: data/historical-44k-128-valid1
+  features:
+    sample_rate: 44100
+    num_mels: 128
+    hop_size: 512
+    n_fft: 2048
+    win_size: 2048
+    fmin: 40
+    fmax: 16000
+    f0_min: 65
+    f0_max: 1100
+    pitch_extractor: parselmouth
+  validation_size: 1
+  seed: 114514
+  num_workers: 4
+  prefetch_factor: 2

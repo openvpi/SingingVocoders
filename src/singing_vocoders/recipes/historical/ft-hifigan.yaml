@@ -1,0 +1,6 @@
+bases: [../pc-nsf-hifigan.yaml]
+name: historical/ft-hifigan
+data:
+  validation_size: 10
+  crop_frames: 32
+  batch_size: 10

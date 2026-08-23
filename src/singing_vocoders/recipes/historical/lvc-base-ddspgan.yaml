@@ -1,0 +1,2 @@
+bases: [../lvc-ddspgan.yaml, _base.yaml]
+name: historical/lvc-base-ddspgan

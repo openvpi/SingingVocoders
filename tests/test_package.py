@@ -1,6 +1,7 @@
 import os
 import shutil
 import subprocess
+import tomllib
 from importlib.metadata import entry_points
 from pathlib import Path
 
@@ -33,6 +34,17 @@ def test_cli_publishes_all_workflows_and_only_vocoder_entrypoint() -> None:
         if item.dist is not None and item.dist.name == "singing-vocoders"
     }
     assert scripts == {"vocoder"}
+
+
+def test_project_uses_a_torch_compatibility_range_and_packages_historical_recipes() -> None:
+    project_root = Path(__file__).parents[1]
+    with (project_root / "pyproject.toml").open("rb") as stream:
+        project = tomllib.load(stream)
+    dependencies = project["project"]["dependencies"]
+    assert "torch>=2.11,<3" in dependencies
+    assert not any(value.startswith("torch==") for value in dependencies)
+    assert not any(value.lower().startswith("torchaudio") for value in dependencies)
+    assert "historical/base-hifi" in list_recipes()
 
 
 @pytest.mark.skipif(os.name != "nt", reason="PowerShell environment safety regression")

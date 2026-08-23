@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from singing_vocoders.config.loader import load_config
+from singing_vocoders.recipes import list_recipes, resolve_recipe
 
 BASE = """
 schema_version: 1
@@ -55,12 +56,93 @@ def test_unresolved_interpolation_is_rejected(tmp_path: Path) -> None:
 
 
 def test_all_builtin_recipes_validate() -> None:
-    recipe_dir = Path(__file__).parents[1] / "src" / "singing_vocoders" / "recipes"
-    recipes = sorted(path for path in recipe_dir.glob("*.yaml") if not path.name.startswith("_"))
-    assert len(recipes) == 11
-    loaded = [load_config(path).config for path in recipes]
-    assert {config.name for config in loaded} == {path.stem for path in recipes}
-    assert {config.data.features.num_mels for config in loaded} == {128}
+    canonical = {
+        "ddsp-univnet",
+        "ddspgan",
+        "fast-nsf-hifigan",
+        "hifivae",
+        "lvc-ddspgan",
+        "nsf-hifigan",
+        "nsf-univnet-msd",
+        "nsf-univnet",
+        "one-step-nsf-hifigan",
+        "pc-nsf-hifigan",
+        "univnet",
+    }
+    historical = {
+        "historical/base-ddspgan",
+        "historical/base-hifi-one",
+        "historical/base-hifi",
+        "historical/ddsp-univnet",
+        "historical/ft-hifigan",
+        "historical/hifivae",
+        "historical/lvc-base-ddspgan",
+        "historical/nsf-hifigan-fast",
+        "historical/nsf-univnet",
+        "historical/univnet",
+    }
+    names = set(list_recipes())
+    assert names == canonical | historical
+    loaded = {name: load_config(resolve_recipe(name)).config for name in names}
+    assert {config.name for config in loaded.values()} == names
+    assert {loaded[name].data.features.num_mels for name in canonical} == {128}
+    assert loaded["historical/ft-hifigan"].data.batch_size == 10
+    assert loaded["historical/nsf-hifigan-fast"].data.validation_size == 5
+    fast_optimization = loaded["historical/nsf-hifigan-fast"].optimization
+    assert fast_optimization.name == "alternating"
+    assert fast_optimization.generator.optimizer.name == "muon_adamw"
+    assert fast_optimization.generator.optimizer.adamw_betas == (0.9, 0.999)
+    assert loaded["historical/hifivae"].data.features.num_mels == 192
+    assert loaded["historical/base-ddspgan"].data.features.pitch_extractor == "parselmouth"
+
+
+def test_builtin_recipe_resolution_rejects_internal_and_escaping_paths() -> None:
+    assert resolve_recipe("historical/base-hifi").name == "base-hifi.yaml"
+    with pytest.raises(FileNotFoundError, match="unknown recipe"):
+        resolve_recipe("historical/_base")
+    with pytest.raises(FileNotFoundError, match="unknown recipe"):
+        resolve_recipe("../outside")
+
+
+@pytest.mark.parametrize(
+    (
+        "name",
+        "target",
+        "batch_size",
+        "crop_frames",
+        "validation_size",
+        "max_steps",
+        "validate_every",
+    ),
+    [
+        ("historical/base-hifi", "nsf_hifigan", 3, 20, 1, 100_000, 1_000),
+        ("historical/base-hifi-one", "nsf_hifigan", 3, 20, 1, 100_000, 1_000),
+        ("historical/ft-hifigan", "nsf_hifigan", 10, 32, 10, 100_000, 2_000),
+        ("historical/nsf-hifigan-fast", "nsf_hifigan", 40, 48, 5, 1_000_000, 2_000),
+        ("historical/base-ddspgan", "ddspgan", 3, 20, 1, 100_000, 1_000),
+        ("historical/lvc-base-ddspgan", "lvc_ddspgan", 3, 20, 1, 800_000, 1_000),
+        ("historical/ddsp-univnet", "ddsp_univnet", 10, 20, 1, 800_000, 8_000),
+        ("historical/nsf-univnet", "nsf_univnet", 10, 20, 1, 800_000, 8_000),
+        ("historical/univnet", "univnet", 10, 20, 1, 800_000, 8_000),
+        ("historical/hifivae", "hifivae", 6, 22, 1, 5_000_000, 4_000),
+    ],
+)
+def test_historical_recipes_preserve_effective_training_values(
+    name: str,
+    target: str,
+    batch_size: int,
+    crop_frames: int,
+    validation_size: int,
+    max_steps: int,
+    validate_every: int,
+) -> None:
+    config = load_config(resolve_recipe(name)).config
+    assert config.model.generator.target == target
+    assert config.data.batch_size == batch_size
+    assert config.data.crop_frames == crop_frames
+    assert config.data.validation_size == validation_size
+    assert config.runtime.max_steps == max_steps
+    assert config.runtime.validate_every == validate_every
 
 
 @pytest.mark.parametrize(

@@ -1,0 +1,7 @@
+bases: [../hifivae.yaml, _base.yaml]
+name: historical/hifivae
+data:
+  processed_dir: data/historical-hifivae-44k-192-valid1
+  features:
+    num_mels: 192
+  seed: 1234

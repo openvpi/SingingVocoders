@@ -1,0 +1,5 @@
+bases: [../one-step-nsf-hifigan.yaml, _base.yaml]
+name: historical/base-hifi-one
+augmentation:
+  pc_probability: 0.5
+  pc_key_range: 5

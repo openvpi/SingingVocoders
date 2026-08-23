@@ -1,0 +1,2 @@
+bases: [../ddspgan.yaml, _base.yaml]
+name: historical/base-ddspgan

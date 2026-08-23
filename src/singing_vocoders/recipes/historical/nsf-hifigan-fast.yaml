@@ -1,0 +1,12 @@
+bases: [../fast-nsf-hifigan.yaml, _base.yaml]
+name: historical/nsf-hifigan-fast
+data:
+  processed_dir: data/historical-44k-128-valid5
+  validation_size: 5
+optimization:
+  generator:
+    optimizer:
+      adamw_betas: [0.9, 0.999]
+  discriminator:
+    optimizer:
+      adamw_betas: [0.9, 0.999]
