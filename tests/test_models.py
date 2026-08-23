@@ -16,6 +16,8 @@ from singing_vocoders.components.builtin import (
 )
 from singing_vocoders.config import load_config
 from singing_vocoders.config.schema import ComponentSpec
+from singing_vocoders.modules.backbones.hifivae import AttrDict as HiFiVAEConfig
+from singing_vocoders.modules.backbones.hifivae import HiFivae
 from singing_vocoders.modules.backbones.nsf_hifigan import (
     AttributeDict,
 )
@@ -142,16 +144,43 @@ def test_builtin_discriminators_reject_invalid_architectures(
         )
 
 
-def test_hifivae_recipe_names_its_latent_dimension_and_validates_hop_size() -> None:
+def test_hifivae_recipe_preserves_original_model_fields_and_validates_hop_size() -> None:
     params = dict(load_config(RECIPE_DIR / "hifivae.yaml").config.model.generator.params)
-    assert params["latent_channels"] == 192
-    assert "num_mels" not in params
+    assert params["num_mels"] == 192
     params["hop_size"] = 256
     with pytest.raises(ValueError, match="product of upsample_rates"):
         create_builtin_registry().build(
             ComponentSpec(target="hifivae", params=params),
             GeneratorComponent,
         )
+
+
+def test_hifivae_preserves_original_module_registration_and_forward_contract() -> None:
+    model = HiFivae(
+        HiFiVAEConfig(
+            num_mels=4,
+            upsample_rates=(2, 2),
+            upsample_kernel_sizes=(4, 4),
+            upsample_initial_channel=16,
+            resblock_kernel_sizes=(3,),
+            resblock_dilation_sizes=((1, 3, 5),),
+            resblock="1",
+        )
+    ).eval()
+    state = model.state_dict()
+    assert "Generator.conv_pre.weight_g" in state
+    assert "Generator.ups.0.weight_v" in state
+    assert "Generator.resblocks.0.convs1.0.weight_g" in state
+    assert "Encoder.conv_pre.weight_g" in state
+    assert "Encoder.ups.0.weight_v" in state
+    assert "Encoder.resblocks.0.convs2.0.weight_g" in state
+
+    with torch.inference_mode():
+        torch.manual_seed(1234)
+        audio, latent, mean, log_scale = model(torch.randn(1, 1, 8))
+    assert audio.shape == (1, 1, 8)
+    assert latent.shape == mean.shape == log_scale.shape == (1, 4, 2)
+    assert all(torch.isfinite(value).all() for value in (audio, latent, mean, log_scale))
 
 
 @pytest.mark.parametrize(

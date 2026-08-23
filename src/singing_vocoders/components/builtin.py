@@ -15,7 +15,8 @@ from singing_vocoders.components.contracts import (
 from singing_vocoders.components.factory import ComponentRegistry
 from singing_vocoders.modules.backbones.ddsp_gan import DDSPGANBackbone
 from singing_vocoders.modules.backbones.ddsp_univnet import DDSPUnivNetBackbone
-from singing_vocoders.modules.backbones.hifivae import HiFiVAE as HiFiVAEBackbone
+from singing_vocoders.modules.backbones.hifivae import AttrDict as HiFiVAEConfig
+from singing_vocoders.modules.backbones.hifivae import HiFivae as HiFiVAEBackbone
 from singing_vocoders.modules.backbones.lvc_ddsp_gan import LVCDDSPGANBackbone
 from singing_vocoders.modules.backbones.nsf_hifigan import AttributeDict
 from singing_vocoders.modules.backbones.nsf_hifigan import NSFHiFiGAN as NSFHiFiGANBackbone
@@ -208,7 +209,7 @@ class HiFiVAEGenerator(GeneratorComponent):
 
     def __init__(
         self,
-        latent_channels: int,
+        num_mels: int,
         hop_size: int,
         upsample_rates: Sequence[int],
         upsample_kernel_sizes: Sequence[int],
@@ -222,13 +223,15 @@ class HiFiVAEGenerator(GeneratorComponent):
         if math.prod(rates) != hop_size:
             raise ValueError("product of upsample_rates must equal hop_size")
         self.backbone = HiFiVAEBackbone(
-            latent_channels=latent_channels,
-            upsample_rates=rates,
-            upsample_kernel_sizes=tuple(upsample_kernel_sizes),
-            initial_channels=upsample_initial_channel,
-            residual_kernel_sizes=tuple(resblock_kernel_sizes),
-            residual_dilation_sizes=tuple(tuple(group) for group in resblock_dilation_sizes),
-            residual_block=resblock,
+            HiFiVAEConfig(
+                num_mels=num_mels,
+                upsample_rates=rates,
+                upsample_kernel_sizes=tuple(upsample_kernel_sizes),
+                upsample_initial_channel=upsample_initial_channel,
+                resblock_kernel_sizes=tuple(resblock_kernel_sizes),
+                resblock_dilation_sizes=tuple(tuple(group) for group in resblock_dilation_sizes),
+                resblock=resblock,
+            )
         )
 
     def forward(self, batch: Batch) -> GeneratorOutput:

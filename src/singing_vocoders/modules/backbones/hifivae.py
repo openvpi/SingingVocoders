@@ -1,343 +1,345 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import Literal, cast
+import math
+from collections.abc import Sequence
+from typing import Any
 
 import torch
 from torch import Tensor, nn
 from torch.nn import functional as F
 from torch.nn.utils import remove_weight_norm, weight_norm
 
-LEAKY_RELU_SLOPE = 0.1
+LRELU_SLOPE = 0.1
 
 
-@dataclass(frozen=True)
-class _ArchitectureConfig:
-    latent_channels: int
-    upsample_rates: tuple[int, ...]
-    upsample_kernel_sizes: tuple[int, ...]
-    initial_channels: int
-    residual_kernel_sizes: tuple[int, ...]
-    residual_dilation_sizes: tuple[tuple[int, ...], ...]
-    residual_block: Literal["1", "2"]
-
-    def validate(self) -> None:
-        if self.residual_block not in {"1", "2"}:
-            raise ValueError(f"unsupported residual block type: {self.residual_block!r}")
-        if self.latent_channels <= 0 or self.initial_channels <= 0:
-            raise ValueError("channel counts must be positive")
-        if not self.upsample_rates:
-            raise ValueError("at least one upsampling stage is required")
-        if len(self.upsample_rates) != len(self.upsample_kernel_sizes):
-            raise ValueError("upsampling rates and kernel sizes must have equal lengths")
-        for rate, kernel_size in zip(self.upsample_rates, self.upsample_kernel_sizes, strict=True):
-            if rate <= 0 or kernel_size < rate or (kernel_size - rate) % 2:
-                raise ValueError(
-                    "each upsampling kernel must be at least its rate with an even difference"
-                )
-        channel_divisor = 2 ** len(self.upsample_rates)
-        if self.initial_channels % channel_divisor:
-            raise ValueError("initial_channels must be divisible by two at every stage")
-        if len(self.residual_kernel_sizes) != len(self.residual_dilation_sizes):
-            raise ValueError("residual kernel and dilation groups must have equal lengths")
-        if not self.residual_kernel_sizes:
-            raise ValueError("at least one residual kernel is required")
-        if any(kernel <= 0 or kernel % 2 == 0 for kernel in self.residual_kernel_sizes):
-            raise ValueError("residual kernels must be positive odd integers")
-
-        required_dilations = 3 if self.residual_block == "1" else 2
-        if any(len(group) != required_dilations for group in self.residual_dilation_sizes):
-            raise ValueError(
-                f"Residual block type {self.residual_block!r} requires "
-                f"{required_dilations} dilations per kernel"
-            )
-        if any(dilation <= 0 for group in self.residual_dilation_sizes for dilation in group):
-            raise ValueError("residual dilations must be positive")
+class AttrDict(dict[str, Any]):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.__dict__ = self
 
 
-def _initialize_convolution(module: nn.Module, mean: float = 0.0, std: float = 0.01) -> None:
-    if isinstance(module, (nn.Conv1d, nn.ConvTranspose1d)):
+def init_weights(module: nn.Module, mean: float = 0.0, std: float = 0.01) -> None:
+    if "Conv" in module.__class__.__name__:
+        weight = getattr(module, "weight", None)
+        if not isinstance(weight, Tensor):
+            raise TypeError(f"{type(module).__name__} does not expose a tensor weight")
         with torch.no_grad():
-            module.weight.normal_(mean, std)
+            weight.normal_(mean=mean, std=std)
 
 
-def _same_padding(kernel_size: int, dilation: int = 1) -> int:
+def get_padding(kernel_size: int, dilation: int = 1) -> int:
     return (kernel_size * dilation - dilation) // 2
 
 
-def _normalized_convolution(
-    channels: int,
-    kernel_size: int,
-    dilation: int,
-) -> nn.Conv1d:
-    return weight_norm(
-        nn.Conv1d(
-            channels,
-            channels,
-            kernel_size,
-            dilation=dilation,
-            padding=_same_padding(kernel_size, dilation),
+def _validate_architecture(h: AttrDict) -> None:
+    num_mels = h["num_mels"]
+    initial_channels = h["upsample_initial_channel"]
+    rates = h["upsample_rates"]
+    kernels = h["upsample_kernel_sizes"]
+    residual_kernels = h["resblock_kernel_sizes"]
+    residual_dilations = h["resblock_dilation_sizes"]
+    resblock = h["resblock"]
+
+    if isinstance(num_mels, bool) or not isinstance(num_mels, int) or num_mels <= 0:
+        raise ValueError("num_mels must be a positive integer")
+    if (
+        isinstance(initial_channels, bool)
+        or not isinstance(initial_channels, int)
+        or initial_channels <= 0
+    ):
+        raise ValueError("upsample_initial_channel must be a positive integer")
+    if not isinstance(rates, Sequence) or isinstance(rates, (str, bytes)) or not rates:
+        raise ValueError("upsample_rates must be a non-empty sequence")
+    if not isinstance(kernels, Sequence) or isinstance(kernels, (str, bytes)):
+        raise ValueError("upsample_kernel_sizes must be a sequence")
+    if len(rates) != len(kernels):
+        raise ValueError("upsample rates and kernel sizes must have equal lengths")
+    if any(isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in rates):
+        raise ValueError("upsample rates must be positive integers")
+    if any(
+        isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in kernels
+    ):
+        raise ValueError("upsample kernel sizes must be positive integers")
+    if any(
+        kernel < rate or (kernel - rate) % 2 for rate, kernel in zip(rates, kernels, strict=True)
+    ):
+        raise ValueError(
+            "each upsample kernel must be at least its rate and differ from it by an even value"
         )
-    )
-
-
-class _ResidualBlock(nn.Module, ABC):
-    @abstractmethod
-    def forward(self, inputs: Tensor) -> Tensor: ...
-
-    @abstractmethod
-    def remove_weight_norm(self) -> None: ...
-
-
-class PairedResidualBlock(_ResidualBlock):
-    def __init__(
-        self,
-        channels: int,
-        kernel_size: int = 3,
-        dilations: tuple[int, ...] = (1, 3, 5),
-    ) -> None:
-        super().__init__()
-        self.dilated_convolutions = nn.ModuleList(
-            _normalized_convolution(channels, kernel_size, dilation) for dilation in dilations
-        )
-        self.standard_convolutions = nn.ModuleList(
-            _normalized_convolution(channels, kernel_size, 1) for _ in dilations
-        )
-        self.dilated_convolutions.apply(_initialize_convolution)
-        self.standard_convolutions.apply(_initialize_convolution)
-
-    def forward(self, inputs: Tensor) -> Tensor:
-        output = inputs
-        for dilated_convolution, standard_convolution in zip(
-            self.dilated_convolutions,
-            self.standard_convolutions,
-            strict=True,
+    if initial_channels % (2 ** len(rates)):
+        raise ValueError("upsample_initial_channel must be divisible by two at every stage")
+    if (
+        not isinstance(residual_kernels, Sequence)
+        or isinstance(residual_kernels, (str, bytes))
+        or not residual_kernels
+    ):
+        raise ValueError("resblock_kernel_sizes must be a non-empty sequence")
+    if not isinstance(residual_dilations, Sequence) or isinstance(residual_dilations, (str, bytes)):
+        raise ValueError("resblock_dilation_sizes must be a sequence")
+    if len(residual_kernels) != len(residual_dilations):
+        raise ValueError("residual kernel and dilation groups must have equal lengths")
+    if any(
+        isinstance(value, bool) or not isinstance(value, int) or value <= 0 or value % 2 == 0
+        for value in residual_kernels
+    ):
+        raise ValueError("residual kernel sizes must be positive odd integers")
+    if resblock not in {"1", "2"}:
+        raise ValueError("resblock must be '1' or '2'")
+    required_dilations = 3 if resblock == "1" else 2
+    for dilations in residual_dilations:
+        if not isinstance(dilations, Sequence) or isinstance(dilations, (str, bytes)):
+            raise ValueError("each residual dilation group must be a sequence")
+        if len(dilations) != required_dilations:
+            raise ValueError(
+                f"resblock {resblock} requires {required_dilations} dilations per residual block"
+            )
+        if any(
+            isinstance(value, bool) or not isinstance(value, int) or value <= 0
+            for value in dilations
         ):
-            residual = F.leaky_relu(output, LEAKY_RELU_SLOPE)
-            residual = dilated_convolution(residual)
-            residual = F.leaky_relu(residual, LEAKY_RELU_SLOPE)
-            residual = standard_convolution(residual)
-            output = output + residual
-        return output
-
-    def remove_weight_norm(self) -> None:
-        for convolution in self.dilated_convolutions:
-            remove_weight_norm(convolution)
-        for convolution in self.standard_convolutions:
-            remove_weight_norm(convolution)
+            raise ValueError("residual dilations must be positive integers")
 
 
-class SingleResidualBlock(_ResidualBlock):
+class ResBlock1(nn.Module):
     def __init__(
         self,
+        h: AttrDict,
         channels: int,
         kernel_size: int = 3,
-        dilations: tuple[int, ...] = (1, 3),
+        dilation: Sequence[int] = (1, 3, 5),
     ) -> None:
         super().__init__()
-        self.convolutions = nn.ModuleList(
-            _normalized_convolution(channels, kernel_size, dilation) for dilation in dilations
+        self.h = h
+        self.convs1 = nn.ModuleList(
+            [
+                weight_norm(
+                    nn.Conv1d(
+                        channels,
+                        channels,
+                        kernel_size,
+                        1,
+                        dilation=dilation[index],
+                        padding=get_padding(kernel_size, dilation[index]),
+                    )
+                )
+                for index in range(3)
+            ]
         )
-        self.convolutions.apply(_initialize_convolution)
+        self.convs1.apply(init_weights)
+        self.convs2 = nn.ModuleList(
+            [
+                weight_norm(
+                    nn.Conv1d(
+                        channels,
+                        channels,
+                        kernel_size,
+                        1,
+                        dilation=1,
+                        padding=get_padding(kernel_size, 1),
+                    )
+                )
+                for _ in range(3)
+            ]
+        )
+        self.convs2.apply(init_weights)
 
-    def forward(self, inputs: Tensor) -> Tensor:
-        output = inputs
-        for convolution in self.convolutions:
-            residual = F.leaky_relu(output, LEAKY_RELU_SLOPE)
-            residual = convolution(residual)
-            output = output + residual
-        return output
+    def forward(self, x: Tensor) -> Tensor:
+        for conv1, conv2 in zip(self.convs1, self.convs2, strict=True):
+            residual = F.leaky_relu(x, LRELU_SLOPE)
+            residual = conv1(residual)
+            residual = F.leaky_relu(residual, LRELU_SLOPE)
+            residual = conv2(residual)
+            x = residual + x
+        return x
 
     def remove_weight_norm(self) -> None:
-        for convolution in self.convolutions:
-            remove_weight_norm(convolution)
+        for layer in self.convs1:
+            remove_weight_norm(layer)
+        for layer in self.convs2:
+            remove_weight_norm(layer)
 
 
-def _residual_block_type(
-    config: _ArchitectureConfig,
-) -> type[PairedResidualBlock] | type[SingleResidualBlock]:
-    return PairedResidualBlock if config.residual_block == "1" else SingleResidualBlock
-
-
-def _apply_residual_stage(
-    inputs: Tensor,
-    blocks: nn.ModuleList,
-    stage_index: int,
-    blocks_per_stage: int,
-) -> Tensor:
-    offset = stage_index * blocks_per_stage
-    first_block = cast(_ResidualBlock, blocks[offset])
-    output = first_block.forward(inputs)
-    for block_index in range(1, blocks_per_stage):
-        block = cast(_ResidualBlock, blocks[offset + block_index])
-        output = output + block.forward(inputs)
-    return output / blocks_per_stage
-
-
-class HiFiVAEEncoder(nn.Module):
-    def __init__(self, config: _ArchitectureConfig) -> None:
+class ResBlock2(nn.Module):
+    def __init__(
+        self,
+        h: AttrDict,
+        channels: int,
+        kernel_size: int = 3,
+        dilation: Sequence[int] = (1, 3),
+    ) -> None:
         super().__init__()
-        self.blocks_per_stage = len(config.residual_kernel_sizes)
-        self.latent_channels = config.latent_channels
-        downsampling_stages = len(config.upsample_rates)
-        input_channels = config.initial_channels // (2**downsampling_stages)
-        self.input_convolution = weight_norm(nn.Conv1d(1, input_channels, 7, padding=3))
+        self.h = h
+        self.convs = nn.ModuleList(
+            [
+                weight_norm(
+                    nn.Conv1d(
+                        channels,
+                        channels,
+                        kernel_size,
+                        1,
+                        dilation=dilation[index],
+                        padding=get_padding(kernel_size, dilation[index]),
+                    )
+                )
+                for index in range(2)
+            ]
+        )
+        self.convs.apply(init_weights)
 
-        self.downsampling_layers = nn.ModuleList()
-        for stage_index, (stride, kernel_size) in enumerate(
+    def forward(self, x: Tensor) -> Tensor:
+        for conv in self.convs:
+            residual = F.leaky_relu(x, LRELU_SLOPE)
+            residual = conv(residual)
+            x = residual + x
+        return x
+
+    def remove_weight_norm(self) -> None:
+        for layer in self.convs:
+            remove_weight_norm(layer)
+
+
+class Encoder(nn.Module):
+    def __init__(self, h: AttrDict) -> None:
+        super().__init__()
+        _validate_architecture(h)
+        self.h = h
+        self.num_kernels = len(h["resblock_kernel_sizes"])
+        self.out_channels = h["num_mels"]
+        self.num_downsamples = len(h["upsample_rates"])
+        self.conv_pre = weight_norm(
+            nn.Conv1d(
+                1,
+                h["upsample_initial_channel"] // (2 ** len(h["upsample_rates"])),
+                7,
+                1,
+                padding=3,
+            )
+        )
+        resblock = ResBlock1 if h["resblock"] == "1" else ResBlock2
+        self.ups = nn.ModuleList()
+        for index, (rate, kernel) in enumerate(
             zip(
-                reversed(config.upsample_rates),
-                reversed(config.upsample_kernel_sizes),
+                reversed(h["upsample_rates"]),
+                reversed(h["upsample_kernel_sizes"]),
                 strict=True,
             )
         ):
-            layer_input_channels = config.initial_channels // (
-                2 ** (downsampling_stages - stage_index)
-            )
-            layer_output_channels = config.initial_channels // (
-                2 ** (downsampling_stages - stage_index - 1)
-            )
-            self.downsampling_layers.append(
+            self.ups.append(
                 weight_norm(
                     nn.Conv1d(
-                        layer_input_channels,
-                        layer_output_channels,
-                        kernel_size,
-                        stride,
-                        padding=(kernel_size - stride + 1) // 2,
+                        h["upsample_initial_channel"] // (2 ** (len(h["upsample_rates"]) - index)),
+                        h["upsample_initial_channel"]
+                        // (2 ** (len(h["upsample_rates"]) - index - 1)),
+                        kernel,
+                        rate,
+                        padding=(kernel - rate + 1) // 2,
                     )
                 )
             )
-
-        residual_block_type = _residual_block_type(config)
-        self.residual_blocks = nn.ModuleList()
-        for stage_index in range(downsampling_stages):
-            channels = config.initial_channels // (2 ** (downsampling_stages - stage_index - 1))
-            for kernel_size, dilations in zip(
-                config.residual_kernel_sizes,
-                config.residual_dilation_sizes,
-                strict=True,
+        self.resblocks = nn.ModuleList()
+        for stage in range(len(self.ups), 0, -1):
+            channels = h["upsample_initial_channel"] // (2 ** (stage - 1))
+            for kernel, dilation in zip(
+                h["resblock_kernel_sizes"], h["resblock_dilation_sizes"], strict=True
             ):
-                self.residual_blocks.append(residual_block_type(channels, kernel_size, dilations))
+                self.resblocks.append(resblock(h, channels, kernel, dilation))
 
-        self.output_convolution = weight_norm(
-            nn.Conv1d(config.initial_channels, 2 * config.latent_channels, 7, padding=3)
-        )
-        self.downsampling_layers.apply(_initialize_convolution)
-        self.output_convolution.apply(_initialize_convolution)
+        self.conv_post = weight_norm(nn.Conv1d(channels, 2 * h["num_mels"], 7, 1, padding=3))
+        self.ups.apply(init_weights)
+        self.conv_post.apply(init_weights)
+        self.upp = math.prod(h["upsample_rates"])
 
-    def forward(self, audio: Tensor) -> tuple[Tensor, Tensor, Tensor]:
-        output = self.input_convolution(audio)
-        for stage_index, downsampling_layer in enumerate(self.downsampling_layers):
-            output = F.leaky_relu(output, LEAKY_RELU_SLOPE)
-            output = downsampling_layer(output)
-            output = _apply_residual_stage(
-                output,
-                self.residual_blocks,
-                stage_index,
-                self.blocks_per_stage,
-            )
-
-        output = F.leaky_relu(output)
-        distribution = self.output_convolution(output)
-        mean, log_scale = torch.split(distribution, self.latent_channels, dim=1)
+    def forward(self, x: Tensor) -> tuple[Tensor, Tensor, Tensor]:
+        x = self.conv_pre(x)
+        for stage in range(self.num_downsamples):
+            x = F.leaky_relu(x, LRELU_SLOPE)
+            x = self.ups[stage](x)
+            combined: Tensor | None = None
+            for kernel in range(self.num_kernels):
+                residual = self.resblocks[stage * self.num_kernels + kernel](x)
+                combined = residual if combined is None else combined + residual
+            if combined is None:
+                raise RuntimeError("encoder residual stage contains no blocks")
+            x = combined / self.num_kernels
+        x = F.leaky_relu(x)
+        x = self.conv_post(x)
+        mean, log_scale = torch.split(x, self.out_channels, dim=1)
         latent = mean + torch.randn_like(mean) * torch.exp(log_scale)
         return latent, mean, log_scale
 
 
-class HiFiVAEDecoder(nn.Module):
-    def __init__(self, config: _ArchitectureConfig) -> None:
+class Generators(nn.Module):
+    def __init__(self, h: AttrDict) -> None:
         super().__init__()
-        self.blocks_per_stage = len(config.residual_kernel_sizes)
-        self.input_convolution = weight_norm(
-            nn.Conv1d(config.latent_channels, config.initial_channels, 7, padding=3)
+        _validate_architecture(h)
+        self.h = h
+        self.num_kernels = len(h["resblock_kernel_sizes"])
+        self.num_upsamples = len(h["upsample_rates"])
+        self.conv_pre = weight_norm(
+            nn.Conv1d(h["num_mels"], h["upsample_initial_channel"], 7, 1, padding=3)
         )
-
-        self.upsampling_layers = nn.ModuleList()
-        for stage_index, (stride, kernel_size) in enumerate(
-            zip(config.upsample_rates, config.upsample_kernel_sizes, strict=True)
+        resblock = ResBlock1 if h["resblock"] == "1" else ResBlock2
+        self.ups = nn.ModuleList()
+        for index, (rate, kernel) in enumerate(
+            zip(h["upsample_rates"], h["upsample_kernel_sizes"], strict=True)
         ):
-            self.upsampling_layers.append(
+            self.ups.append(
                 weight_norm(
                     nn.ConvTranspose1d(
-                        config.initial_channels // (2**stage_index),
-                        config.initial_channels // (2 ** (stage_index + 1)),
-                        kernel_size,
-                        stride,
-                        padding=(kernel_size - stride + 1) // 2,
+                        h["upsample_initial_channel"] // (2**index),
+                        h["upsample_initial_channel"] // (2 ** (index + 1)),
+                        kernel,
+                        rate,
+                        padding=(kernel - rate + 1) // 2,
                     )
                 )
             )
-
-        residual_block_type = _residual_block_type(config)
-        self.residual_blocks = nn.ModuleList()
-        for stage_index in range(len(self.upsampling_layers)):
-            channels = config.initial_channels // (2 ** (stage_index + 1))
-            for kernel_size, dilations in zip(
-                config.residual_kernel_sizes,
-                config.residual_dilation_sizes,
-                strict=True,
+        self.resblocks = nn.ModuleList()
+        for stage in range(len(self.ups)):
+            channels = h["upsample_initial_channel"] // (2 ** (stage + 1))
+            for kernel, dilation in zip(
+                h["resblock_kernel_sizes"], h["resblock_dilation_sizes"], strict=True
             ):
-                self.residual_blocks.append(residual_block_type(channels, kernel_size, dilations))
+                self.resblocks.append(resblock(h, channels, kernel, dilation))
 
-        output_channels = config.initial_channels // (2 ** len(self.upsampling_layers))
-        self.output_convolution = weight_norm(nn.Conv1d(output_channels, 1, 7, padding=3))
-        self.upsampling_layers.apply(_initialize_convolution)
-        self.output_convolution.apply(_initialize_convolution)
+        self.conv_post = weight_norm(nn.Conv1d(channels, 1, 7, 1, padding=3))
+        self.ups.apply(init_weights)
+        self.conv_post.apply(init_weights)
+        self.upp = math.prod(h["upsample_rates"])
 
-    def forward(self, latent: Tensor) -> Tensor:
-        output = self.input_convolution(latent)
-        for stage_index, upsampling_layer in enumerate(self.upsampling_layers):
-            output = F.leaky_relu(output, LEAKY_RELU_SLOPE)
-            output = upsampling_layer(output)
-            output = _apply_residual_stage(
-                output,
-                self.residual_blocks,
-                stage_index,
-                self.blocks_per_stage,
-            )
-
-        output = F.leaky_relu(output)
-        return torch.tanh(self.output_convolution(output))
+    def forward(self, x: Tensor) -> Tensor:
+        x = self.conv_pre(x)
+        for stage in range(self.num_upsamples):
+            x = F.leaky_relu(x, LRELU_SLOPE)
+            x = self.ups[stage](x)
+            combined: Tensor | None = None
+            for kernel in range(self.num_kernels):
+                residual = self.resblocks[stage * self.num_kernels + kernel](x)
+                combined = residual if combined is None else combined + residual
+            if combined is None:
+                raise RuntimeError("generator residual stage contains no blocks")
+            x = combined / self.num_kernels
+        x = F.leaky_relu(x)
+        x = self.conv_post(x)
+        return torch.tanh(x)
 
     def remove_weight_norm(self) -> None:
-        for upsampling_layer in self.upsampling_layers:
-            remove_weight_norm(upsampling_layer)
-        for module in self.residual_blocks:
-            residual_block = cast(_ResidualBlock, module)
-            residual_block.remove_weight_norm()
-        remove_weight_norm(self.input_convolution)
-        remove_weight_norm(self.output_convolution)
+        for layer in self.ups:
+            remove_weight_norm(layer)
+        for layer in self.resblocks:
+            layer.remove_weight_norm()  # type: ignore[operator]
+        remove_weight_norm(self.conv_pre)
+        remove_weight_norm(self.conv_post)
 
 
-class HiFiVAE(nn.Module):
-    def __init__(
-        self,
-        *,
-        latent_channels: int,
-        upsample_rates: tuple[int, ...],
-        upsample_kernel_sizes: tuple[int, ...],
-        initial_channels: int,
-        residual_kernel_sizes: tuple[int, ...],
-        residual_dilation_sizes: tuple[tuple[int, ...], ...],
-        residual_block: Literal["1", "2"],
-    ) -> None:
+class HiFivae(nn.Module):
+    def __init__(self, h: AttrDict) -> None:
         super().__init__()
-        architecture = _ArchitectureConfig(
-            latent_channels=latent_channels,
-            upsample_rates=upsample_rates,
-            upsample_kernel_sizes=upsample_kernel_sizes,
-            initial_channels=initial_channels,
-            residual_kernel_sizes=residual_kernel_sizes,
-            residual_dilation_sizes=residual_dilation_sizes,
-            residual_block=residual_block,
-        )
-        architecture.validate()
-        self.encoder = HiFiVAEEncoder(architecture)
-        self.decoder = HiFiVAEDecoder(architecture)
+        _validate_architecture(h)
+        self.Generator = Generators(h)
+        self.Encoder = Encoder(h)
 
-    def forward(self, audio: Tensor) -> tuple[Tensor, Tensor, Tensor, Tensor]:
-        latent, mean, log_scale = self.encoder(audio)
-        reconstructed_audio = self.decoder(latent)
-        return reconstructed_audio, latent, mean, log_scale
+    def forward(self, x: Tensor) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+        latent, mean, log_scale = self.Encoder(x)
+        audio = self.Generator(latent)
+        return audio, latent, mean, log_scale
