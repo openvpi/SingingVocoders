@@ -19,7 +19,7 @@ def _same_padding(kernel_size: int, dilation: int = 1) -> int:
     return (kernel_size * dilation - dilation) // 2
 
 
-class PeriodDiscriminator(nn.Module):
+class DiscriminatorP(nn.Module):
     def __init__(
         self,
         period: int,
@@ -81,7 +81,7 @@ class MultiPeriodDiscriminator(DiscriminatorComponent):
         ):
             raise ValueError("periods must contain positive integers")
         self.discriminators = nn.ModuleList(
-            [PeriodDiscriminator(period, normalizer=_normalizer) for period in self.periods]
+            [DiscriminatorP(period, normalizer=_normalizer) for period in self.periods]
         )
 
     def forward(self, audio: Tensor) -> DiscriminatorOutput:
@@ -92,7 +92,7 @@ class MultiPeriodDiscriminator(DiscriminatorComponent):
         )
 
 
-class ScaleDiscriminator(nn.Module):
+class DiscriminatorS(nn.Module):
     def __init__(self, use_spectral_norm: bool = False) -> None:
         super().__init__()
         normalize = spectral_norm if use_spectral_norm else weight_norm
@@ -124,7 +124,7 @@ class MultiScaleDiscriminator(DiscriminatorComponent):
     def __init__(self) -> None:
         super().__init__()
         self.discriminators = nn.ModuleList(
-            [ScaleDiscriminator(use_spectral_norm=True), ScaleDiscriminator(), ScaleDiscriminator()]
+            [DiscriminatorS(use_spectral_norm=True), DiscriminatorS(), DiscriminatorS()]
         )
         self.meanpools = nn.ModuleList(
             [nn.AvgPool1d(4, 2, padding=2), nn.AvgPool1d(4, 2, padding=2)]
