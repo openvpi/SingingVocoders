@@ -62,8 +62,8 @@ class PitchAdjustableMelSpectrogram:
         y = torch.nn.functional.pad(
             y.unsqueeze(1),
             (
-                int((win_size_new - hop_length) // 2),
-                int((win_size_new - hop_length+1) // 2),
+                int((n_fft_new - hop_length) // 2),
+                int((n_fft_new - hop_length+1) // 2),
             ),
             mode="reflect",
         )

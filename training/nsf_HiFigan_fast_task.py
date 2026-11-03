@@ -215,8 +215,8 @@ class stftlog:
         y = torch.nn.functional.pad(
             y.unsqueeze(1),
             (
-                int((self.win_size - self.hop_length) // 2),
-                int((self.win_size - self.hop_length + 1) // 2),
+                int((self.n_fft - self.hop_length) // 2),
+                int((self.n_fft - self.hop_length + 1) // 2),
             ),
             mode="reflect",
         )
