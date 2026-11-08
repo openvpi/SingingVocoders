@@ -1,0 +1,17 @@
+# PyTorch and torchaudio versions must match.
+# For CUDA, install the matching wheels from https://pytorch.org/get-started/locally/
+torch
+torchaudio
+
+click
+einops
+librosa
+lightning
+matplotlib
+numpy
+praat-parselmouth
+pyworld
+tensorboard
+torchmetrics
+tqdm
+PyYAML

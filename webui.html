@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SingingVocoders · 微调工作台</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+      background: #101319;
+      color: #eef0f6;
+      font-synthesis: none;
+      --muted: #9da5b5;
+      --line: #2b303b;
+      --accent: #c3f36b;
+      --panel: #181c24;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-width: 320px;
+      background:
+        radial-gradient(ellipse at 82% 0%, #243322 0, transparent 34rem),
+        #101319;
+    }
+    .shell { max-width: 1100px; margin: 0 auto; padding: 46px 24px 60px; }
+    header { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; margin-bottom: 30px; }
+    .eyebrow { color: var(--accent); font-size: 12px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
+    h1 { margin: 8px 0 10px; font-size: clamp(28px, 5vw, 42px); letter-spacing: -.04em; }
+    .intro { max-width: 650px; margin: 0; color: var(--muted); line-height: 1.7; }
+    .local-tag { flex: 0 0 auto; margin-top: 4px; padding: 8px 11px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 12px; }
+    .layout { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(330px, .95fr); gap: 18px; align-items: start; }
+    .card { padding: 24px; border: 1px solid var(--line); border-radius: 16px; background: color-mix(in srgb, var(--panel) 94%, transparent); box-shadow: 0 16px 50px #0002; }
+    h2 { margin: 0 0 7px; font-size: 17px; }
+    .section-note { margin: 0 0 22px; color: var(--muted); font-size: 13px; line-height: 1.6; }
+    .field { margin-bottom: 17px; }
+    label { display: block; margin-bottom: 7px; font-size: 13px; font-weight: 600; }
+    .path-input { display: flex; gap: 8px; }
+    .path-input input { min-width: 0; flex: 1; }
+    .browse { flex: 0 0 auto; border: 1px solid #363c49; background: #222731; color: #e2e7ef; }
+    input[type="text"], input[type="number"] {
+      width: 100%; padding: 11px 12px; border: 1px solid #363c49; border-radius: 8px;
+      outline: none; background: #11151b; color: #eef0f6; font: inherit; font-size: 13px;
+    }
+    .path-input .browse { width: auto; }
+    input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px #c3f36b20; }
+    .hint { margin: 6px 0 0; color: #858e9f; font-size: 11px; line-height: 1.5; }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .check-row { display: flex; align-items: flex-start; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 9px; }
+    .check-row input { margin-top: 3px; accent-color: var(--accent); }
+    .check-row label { margin: 0; line-height: 1.5; }
+    .check-row small { display: block; margin-top: 3px; color: var(--muted); font-weight: 400; }
+    .actions { display: flex; gap: 10px; margin-top: 21px; }
+    button { border: 0; border-radius: 8px; padding: 11px 16px; cursor: pointer; font: inherit; font-size: 13px; font-weight: 700; }
+    button:disabled { cursor: not-allowed; opacity: .48; }
+    .start { flex: 1; background: var(--accent); color: #19210e; }
+    .stop { background: #32252a; color: #ffabb7; }
+    .notice { margin-top: 17px; padding: 11px 12px; border-radius: 8px; background: #232718; color: #c8d6a5; font-size: 12px; line-height: 1.6; }
+    .export-block { margin-top: 27px; padding-top: 22px; border-top: 1px solid var(--line); }
+    .status-line { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 18px 0 12px; }
+    .badge { padding: 6px 9px; border-radius: 999px; background: #282d37; color: #bdc4d2; font-size: 11px; font-weight: 700; }
+    .badge.running, .badge.stopping { background: #30351f; color: var(--accent); }
+    .badge.completed { background: #1e3528; color: #84e2a8; }
+    .badge.failed { background: #3a2529; color: #ff9eab; }
+    .message { color: var(--muted); font-size: 12px; text-align: right; }
+    .log { min-height: 420px; max-height: 560px; overflow: auto; margin: 0; padding: 14px; border: 1px solid var(--line); border-radius: 9px; background: #0c0f13; color: #c2c9d4; font: 11px/1.65 Consolas, "Cascadia Code", monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .error { min-height: 18px; margin-top: 12px; color: #ff9eab; font-size: 12px; }
+    @media (max-width: 800px) { .layout { grid-template-columns: 1fr; } .log { min-height: 280px; } }
+    @media (max-width: 520px) { .shell { padding: 28px 15px 40px; } header { display: block; } .local-tag { display: inline-block; margin-top: 14px; } .card { padding: 18px; } .two-col { gap: 10px; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div>
+        <div class="eyebrow">SingingVocoders · Fine-tuning</div>
+        <h1>声码器微调工作台</h1>
+        <p class="intro">使用项目内置的 NSF-HiFiGAN 微调配置，从音频预处理到训练一站完成。任务和模型文件均保存在本机。</p>
+      </div>
+      <div class="local-tag">● 本地运行</div>
+    </header>
+
+    <div class="layout">
+      <section class="card">
+        <h2>微调设置</h2>
+        <p class="section-note">提供 44.1 kHz 的 WAV/FLAC 数据目录和兼容的预训练 .ckpt 权重。数据目录会递归扫描。</p>
+        <form id="form">
+          <div class="field">
+            <label for="audio">训练音频目录</label>
+            <div class="path-input">
+              <input id="audio" name="audio_dir" type="text" placeholder="例如：D:\voice\wavs" required>
+              <button class="browse" type="button" data-kind="directory" data-target="audio">选择文件夹</button>
+            </div>
+          </div>
+          <div class="field">
+            <label for="checkpoint">预训练权重 (.ckpt)</label>
+            <div class="path-input">
+              <input id="checkpoint" name="checkpoint" type="text" placeholder="例如：D:\models\pretrained.ckpt" required>
+              <button class="browse" type="button" data-kind="checkpoint" data-target="checkpoint">选择文件</button>
+            </div>
+          </div>
+          <div class="field">
+            <label for="name">实验名称</label>
+            <input id="name" name="experiment_name" type="text" value="vocoder_finetune" maxlength="64" required>
+            <p class="hint">输出保存到 experiments/&lt;实验名称&gt;，同名实验会按项目默认逻辑尝试续训。</p>
+          </div>
+          <div class="two-col">
+            <div class="field">
+              <label for="steps">训练步数</label>
+              <input id="steps" name="max_steps" type="number" value="2000" min="1" max="10000000">
+            </div>
+            <div class="field">
+              <label for="batch">Batch size</label>
+              <input id="batch" name="batch_size" type="number" value="4" min="1" max="256">
+            </div>
+            <div class="field">
+              <label for="val">验证音频数</label>
+              <input id="val" name="val_num" type="number" value="5" min="1" max="10000">
+            </div>
+            <div class="field">
+              <label for="workers">预处理线程数</label>
+              <input id="workers" name="preprocess_workers" type="number" value="4" min="1" max="64">
+            </div>
+          </div>
+          <div class="check-row">
+            <input id="freeze" name="freeze_mpd" type="checkbox">
+            <label for="freeze">冻结 MPD 判别器
+              <small>小数据集或短步数微调时可尝试开启；默认不冻结。</small>
+            </label>
+          </div>
+          <div class="notice">微调配置保持项目 ft_hifigan.yaml 的声学参数不变。预处理要求音频采样率为 44.1 kHz；不要随意修改 mel 参数。</div>
+          <div class="actions">
+            <button class="start" id="start" type="submit">开始预处理并微调</button>
+            <button class="stop" id="stop" type="button" disabled>停止</button>
+          </div>
+          <div class="error" id="error" role="alert"></div>
+        </form>
+
+        <div class="export-block">
+          <h2>导出模型与配置</h2>
+          <p class="section-note">选择训练生成的 Lightning checkpoint（同目录需有 config.yaml）和导出文件夹。将生成 model.ckpt 与 config.json。</p>
+          <form id="export-form">
+            <div class="field">
+              <label for="export-checkpoint">训练 checkpoint (.ckpt)</label>
+              <div class="path-input">
+                <input id="export-checkpoint" name="export_checkpoint" type="text" placeholder="选择 experiments 下的训练权重" required>
+                <button class="browse" type="button" data-kind="checkpoint" data-target="export-checkpoint">选择文件</button>
+              </div>
+            </div>
+            <div class="field">
+              <label for="export-dir">导出目标文件夹</label>
+              <div class="path-input">
+                <input id="export-dir" name="export_dir" type="text" placeholder="例如：D:\voice\exported-vocoder" required>
+                <button class="browse" type="button" data-kind="export_directory" data-target="export-dir">选择文件夹</button>
+              </div>
+            </div>
+            <div class="actions">
+              <button class="start" id="export-button" type="submit">导出模型和配置</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>任务状态</h2>
+        <div class="status-line">
+          <span class="badge" id="badge">空闲</span>
+          <span class="message" id="message">等待开始</span>
+        </div>
+        <pre class="log" id="log" aria-live="polite">日志会显示在这里。</pre>
+      </section>
+    </div>
+  </main>
+  <script>
+    const form = document.querySelector('#form');
+    const exportForm = document.querySelector('#export-form');
+    const startButton = document.querySelector('#start');
+    const exportButton = document.querySelector('#export-button');
+    const stopButton = document.querySelector('#stop');
+    const badge = document.querySelector('#badge');
+    const message = document.querySelector('#message');
+    const log = document.querySelector('#log');
+    const errorBox = document.querySelector('#error');
+    const browseButtons = document.querySelectorAll('.browse');
+    const stages = { preprocessing: '预处理', training: '训练', exporting: '导出', completed: '完成', stopped: '已停止' };
+    const labels = {
+      idle: '空闲', running: '运行中', stopping: '停止中',
+      stopped: '已停止', completed: '已完成', failed: '失败'
+    };
+
+    async function request(url, options) {
+      const response = await fetch(url, options);
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || '请求失败');
+      return body;
+    }
+
+    function render(data) {
+      badge.textContent = labels[data.status] || data.status;
+      badge.className = `badge ${data.status}`;
+      message.textContent = data.stage ? `${stages[data.stage] || data.stage} · ${data.message}` : data.message;
+      log.textContent = data.logs.length ? data.logs.join('\n') : '日志会显示在这里。';
+      log.scrollTop = log.scrollHeight;
+      const busy = data.status === 'running' || data.status === 'stopping';
+      startButton.disabled = busy;
+      exportButton.disabled = busy;
+      stopButton.disabled = !busy;
+      for (const control of [...form.elements, ...exportForm.elements, ...browseButtons]) {
+        control.disabled = busy;
+      }
+    }
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      errorBox.textContent = '';
+      const data = Object.fromEntries(new FormData(form).entries());
+      data.freeze_mpd = document.querySelector('#freeze').checked;
+      try {
+        render(await request('/api/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        }));
+      } catch (error) {
+        errorBox.textContent = error.message;
+      }
+    });
+
+    exportForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      errorBox.textContent = '';
+      const data = Object.fromEntries(new FormData(exportForm).entries());
+      try {
+        render(await request('/api/export', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        }));
+      } catch (error) {
+        errorBox.textContent = error.message;
+      }
+    });
+
+    stopButton.addEventListener('click', async () => {
+      errorBox.textContent = '';
+      try {
+        render(await request('/api/stop', { method: 'POST' }));
+      } catch (error) {
+        errorBox.textContent = error.message;
+      }
+    });
+
+    for (const button of browseButtons) {
+      button.addEventListener('click', async () => {
+        errorBox.textContent = '';
+        button.disabled = true;
+        try {
+          const result = await request('/api/browse', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ kind: button.dataset.kind })
+          });
+          if (result.path) document.querySelector(`#${button.dataset.target}`).value = result.path;
+        } catch (error) {
+          errorBox.textContent = error.message;
+        } finally {
+          button.disabled = false;
+        }
+      });
+    }
+
+    async function refresh() {
+      try {
+        render(await request('/api/status'));
+      } catch (error) {
+        errorBox.textContent = error.message;
+      }
+    }
+    refresh();
+    window.setInterval(refresh, 1500);
+  </script>
+</body>
+</html>
